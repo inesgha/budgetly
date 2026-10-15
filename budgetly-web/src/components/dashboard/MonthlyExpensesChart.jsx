@@ -1,5 +1,5 @@
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { formatDT, formatMonthYear, formatShortMonth } from '../../utils/format'
+import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { formatDT, formatDTRounded, formatMonthYear, formatShortMonth } from '../../utils/format'
 import { prefersReducedMotion } from '../../utils/motion'
 import { ChartIcon } from '../icons'
 import EmptyState from '../ui/EmptyState'
@@ -34,7 +34,8 @@ export default function MonthlyExpensesChart({ months, selectedMonth, selectedYe
     <>
       <div aria-hidden="true" className="h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 8, right: 0, bottom: 0, left: 0 }} accessibilityLayer={false}>
+          {/* Marge en haut : place pour le montant au-dessus de la barre la plus haute */}
+          <BarChart data={data} margin={{ top: 24, right: 0, bottom: 0, left: 0 }} accessibilityLayer={false}>
             <XAxis
               dataKey="label"
               axisLine={false}
@@ -48,6 +49,16 @@ export default function MonthlyExpensesChart({ months, selectedMonth, selectedYe
               {data.map((item) => (
                 <Cell key={item.key} fill={item.isSelected ? SELECTED_COLOR : OTHER_COLOR} />
               ))}
+              {/* Montant au-dessus de chaque barre non nulle, en DT sans décimales */}
+              <LabelList
+                dataKey="expenses"
+                position="top"
+                offset={6}
+                formatter={(value) => (value > 0 ? formatDTRounded(value) : '')}
+                fill="#5F5C68"
+                fontSize={11}
+                fontWeight={600}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

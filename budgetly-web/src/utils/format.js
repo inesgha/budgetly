@@ -28,6 +28,25 @@ export function formatAmount(amount) {
   return amountFormatter.format(Number(amount) || 0)
 }
 
+const roundedFormatter = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 })
+
+/** 451.55 -> "452 DT" (sans décimales : pour les étiquettes des graphiques) */
+export function formatDTRounded(amount) {
+  return `${roundedFormatter.format(Math.round(Number(amount) || 0))}${NBSP}DT`
+}
+
+const dateTimeFormatter = new Intl.DateTimeFormat('fr-FR', {
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+/** "2026-10-15T13:32:00Z" (UTC) -> "15 oct., 14:32" (heure locale) */
+export function formatDateTime(isoString) {
+  return dateTimeFormatter.format(new Date(isoString))
+}
+
 /** Revenu : "+250,000 DT" ; dépense : "−4,500 DT" */
 export function formatSignedDT(amount, type) {
   return `${type === 'Income' ? '+' : MINUS}${formatDT(Math.abs(amount))}`

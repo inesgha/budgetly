@@ -7,6 +7,12 @@ export function getCurrentMonth() {
   return { month: today.getMonth() + 1, year: today.getFullYear() }
 }
 
+/** shiftMonth(10, 2026, -1) -> { month: 9, year: 2026 } ; gère le passage d'une année à l'autre */
+export function shiftMonth(month, year, delta) {
+  const date = new Date(year, month - 1 + delta, 1)
+  return { month: date.getMonth() + 1, year: date.getFullYear() }
+}
+
 /** Lit ?month=10&year=2026 dans l'URL ; absent ou invalide -> mois en cours */
 export function readMonthFromParams(searchParams) {
   const month = Number(searchParams.get('month'))
@@ -48,9 +54,8 @@ export function useSelectedMonth() {
 
   const shift = useCallback(
     (delta) => {
-      // new Date(2026, 12, 1) = 1er janvier 2027 : JavaScript gère le passage d'année
-      const date = new Date(year, month - 1 + delta, 1)
-      setMonth(date.getMonth() + 1, date.getFullYear())
+      const next = shiftMonth(month, year, delta)
+      setMonth(next.month, next.year)
     },
     [month, year, setMonth],
   )

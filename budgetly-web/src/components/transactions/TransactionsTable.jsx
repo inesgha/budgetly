@@ -10,7 +10,8 @@ const deleteButtonClasses = `${iconButtonBase} hover:bg-danger-light hover:text-
 // Tableau des transactions (ordinateur) : un vrai <table>, avec <th> pour les colonnes et pour chaque ligne
 export default function TransactionsTable({ transactions, caption, onEdit, onDelete }) {
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-surface">
+    // relative : garde la <caption> sr-only (position absolue) à l'intérieur de la zone qui défile
+    <div className="relative overflow-x-auto rounded-card border border-line bg-surface">
       <table className="w-full text-left text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead className="border-b border-line text-xs font-semibold tracking-wide text-muted uppercase">

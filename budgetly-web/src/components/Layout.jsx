@@ -1,10 +1,11 @@
-import { Suspense, useMemo } from 'react'
-import { NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom'
+import { Suspense, useCallback, useMemo, useState } from 'react'
+import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { monthSearch } from '../hooks/useSelectedMonth'
 import { useUnreadAlerts } from '../hooks/useUnreadAlerts'
+import AlertsMenu from './alerts/AlertsMenu'
 import Logo from './Logo'
-import { BellIcon, ChartIcon, HomeIcon, LogoutIcon, SettingsIcon, TransactionsIcon, WalletIcon } from './icons'
+import { ChartIcon, HomeIcon, LogoutIcon, SettingsIcon, TransactionsIcon, WalletIcon } from './icons'
 import Skeleton, { LoadingRegion } from './ui/Skeleton'
 
 const NAV_ITEMS = [
@@ -15,21 +16,24 @@ const NAV_ITEMS = [
   { to: '/settings', label: 'Paramètres', shortLabel: 'Réglages', Icon: SettingsIcon },
 ]
 
-// "octobre 2026" -> "Octobre 2026"
-function formatCurrentMonth() {
-  const label = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(new Date())
-  return label.charAt(0).toUpperCase() + label.slice(1)
-}
-
 export default function Layout() {
   const { user, logout } = useAuth()
   const firstName = user?.name?.trim().split(/\s+/)[0] ?? ''
-  const { count: unreadCount, refresh: refreshAlerts } = useUnreadAlerts()
+  const { count: unreadCount, refresh: refreshCount } = useUnreadAlerts()
+  // Augmente à chaque modification des alertes : les listes d'alertes (cloche, page Budgets) se rechargent
+  const [alertsVersion, setAlertsVersion] = useState(0)
   // Le mois choisi (?month=&year=) suit l'utilisateur d'une page à l'autre
   const [searchParams] = useSearchParams()
   const search = monthSearch(searchParams)
-  // Fourni aux pages (useOutletContext) : recharger la pastille après une modification
-  const outletContext = useMemo(() => ({ refreshAlerts }), [refreshAlerts])
+
+  // Après chaque création / modification / suppression : pastille de la cloche + listes d'alertes
+  const refreshAlerts = useCallback(() => {
+    refreshCount()
+    setAlertsVersion((version) => version + 1)
+  }, [refreshCount])
+
+  // Fourni aux pages (useOutletContext)
+  const outletContext = useMemo(() => ({ refreshAlerts, alertsVersion }), [refreshAlerts, alertsVersion])
 
   return (
     <div className="min-h-dvh md:pl-60">
@@ -43,19 +47,17 @@ export default function Layout() {
       <Sidebar user={user} onLogout={logout} search={search} />
 
       <div className="flex min-h-dvh flex-col pb-24 md:pb-0">
-        <header className="flex items-center justify-between gap-4 px-4 pt-5 pb-4 md:px-8 md:pt-8 md:pb-6">
+        {/* sticky : la salutation et la cloche restent visibles pendant le défilement */}
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-4 bg-background/90 px-4 py-3 backdrop-blur-md md:px-8 md:py-5">
           <div className="flex min-w-0 items-center gap-3">
             <Logo showName={false} className="md:hidden" />
-            <div className="min-w-0">
-              <p className="truncate font-display text-xl font-semibold tracking-tight text-ink md:text-2xl">
-                Bonjour {firstName},
-              </p>
-              <p className="text-sm text-muted">{formatCurrentMonth()}</p>
-            </div>
+            <p className="truncate font-display text-xl font-semibold tracking-tight text-ink md:text-2xl">
+              Bonjour {firstName},
+            </p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <AlertsButton count={unreadCount} search={search} />
+            <AlertsMenu count={unreadCount} refreshAlerts={refreshAlerts} alertsVersion={alertsVersion} search={search} />
             {/* Sur mobile, la barre latérale (et son bouton) n'est pas affichée */}
             <button
               type="button"
@@ -172,31 +174,5 @@ function MobileNav({ search }) {
         ))}
       </ul>
     </nav>
-  )
-}
-
-function AlertsButton({ count, search }) {
-  const navigate = useNavigate()
-  const label =
-    count > 0 ? `Alertes : ${count} non lue${count > 1 ? 's' : ''}` : 'Alertes : aucune non lue'
-
-  return (
-    // Les alertes concernent les budgets : en attendant une page dédiée, la cloche y mène
-    <button
-      type="button"
-      onClick={() => navigate(`/budgets${search}`)}
-      aria-label={label}
-      className="relative grid size-11 place-items-center rounded-control border border-line bg-surface text-ink transition-colors hover:bg-primary-light hover:text-primary-hover"
-    >
-      <BellIcon />
-      {count > 0 && (
-        <span
-          aria-hidden="true"
-          className="absolute -top-1.5 -right-1.5 h-5 min-w-5 rounded-full bg-danger px-1 text-center text-[11px] leading-5 font-semibold text-white ring-2 ring-background"
-        >
-          {count > 99 ? '99+' : count}
-        </span>
-      )}
-    </button>
   )
 }
