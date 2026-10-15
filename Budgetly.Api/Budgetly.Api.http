@@ -1,6 +1,47 @@
 @Budgetly.Api_HostAddress = http://localhost:5194
 
-GET {{Budgetly.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Inscription (201, ou 409 si l'email existe déjà)
+POST {{Budgetly.Api_HostAddress}}/api/auth/register
+Content-Type: application/json
 
-###
+{
+  "name": "Ines",
+  "email": "ines@example.com",
+  "password": "MotDePasse123"
+}
+
+### Inscription invalide (400 : email invalide, mot de passe trop court)
+POST {{Budgetly.Api_HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "",
+  "email": "pas-un-email",
+  "password": "court"
+}
+
+### Connexion (200) : le token est réutilisé par la requête "me" ci-dessous
+# @name login
+POST {{Budgetly.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "ines@example.com",
+  "password": "MotDePasse123"
+}
+
+### Connexion avec un mauvais mot de passe (401)
+POST {{Budgetly.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "ines@example.com",
+  "password": "mauvais-mot-de-passe"
+}
+
+### Utilisateur connecté (200) : lancez d'abord la requête "Connexion"
+GET {{Budgetly.Api_HostAddress}}/api/auth/me
+Authorization: Bearer {{login.response.body.$.token}}
+
+### Sans token (401)
+GET {{Budgetly.Api_HostAddress}}/api/auth/me
