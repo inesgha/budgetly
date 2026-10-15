@@ -2,6 +2,7 @@ using Budgetly.Api.Data;
 using Budgetly.Api.Dtos;
 using Budgetly.Api.Extensions;
 using Budgetly.Api.Models;
+using Budgetly.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,10 +17,12 @@ public class TransactionsController : ControllerBase
     private const int MaxPageSize = 100;
 
     private readonly AppDbContext _db;
+    private readonly AlertService _alertService;
 
-    public TransactionsController(AppDbContext db)
+    public TransactionsController(AppDbContext db, AlertService alertService)
     {
         _db = db;
+        _alertService = alertService;
     }
 
     [HttpGet]
@@ -122,6 +125,8 @@ public class TransactionsController : ControllerBase
         _db.Transactions.Add(transaction);
         await _db.SaveChangesAsync();
 
+        await CheckBudgetsAsync(userId, (category.Id, transaction.Date, transaction.Type));
+
         return CreatedAtAction(nameof(GetById), new { id = transaction.Id }, TransactionDto.FromTransaction(transaction));
     }
 
@@ -142,6 +147,9 @@ public class TransactionsController : ControllerBase
             return CategoryNotFound();
         }
 
+        // Gardé avant modification : l'ancien budget (catégorie ou mois) est aussi concerné
+        var before = (transaction.CategoryId, transaction.Date, transaction.Type);
+
         transaction.Amount = decimal.Round(request.Amount, 3);
         transaction.Type = category.Type;
         transaction.Date = request.Date!.Value;
@@ -149,6 +157,8 @@ public class TransactionsController : ControllerBase
         transaction.Category = category;
 
         await _db.SaveChangesAsync();
+
+        await CheckBudgetsAsync(userId, before, (category.Id, transaction.Date, transaction.Type));
 
         return TransactionDto.FromTransaction(transaction);
     }
@@ -158,11 +168,32 @@ public class TransactionsController : ControllerBase
     {
         var userId = User.GetUserId();
 
-        var deleted = await _db.Transactions
-            .Where(t => t.Id == id && t.UserId == userId)
-            .ExecuteDeleteAsync();
+        var transaction = await _db.Transactions.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
+        if (transaction is null)
+        {
+            return NotFound();
+        }
 
-        return deleted == 0 ? NotFound() : NoContent();
+        _db.Transactions.Remove(transaction);
+        await _db.SaveChangesAsync();
+
+        await CheckBudgetsAsync(userId, (transaction.CategoryId, transaction.Date, transaction.Type));
+
+        return NoContent();
+    }
+
+    // Vérifie une seule fois chaque budget (catégorie + mois) concerné ; seules les dépenses comptent
+    private async Task CheckBudgetsAsync(int userId, params (int CategoryId, DateOnly Date, TransactionType Type)[] transactions)
+    {
+        var budgetsToCheck = transactions
+            .Where(t => t.Type == TransactionType.Expense)
+            .Select(t => (t.CategoryId, t.Date.Month, t.Date.Year))
+            .Distinct();
+
+        foreach (var (categoryId, month, year) in budgetsToCheck)
+        {
+            await _alertService.CheckBudgetAsync(userId, categoryId, month, year);
+        }
     }
 
     // Chargée avec suivi (sans AsNoTracking) car elle est rattachée à la transaction enregistrée

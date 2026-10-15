@@ -51,9 +51,10 @@ namespace Budgetly.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("BudgetId");
-
                     b.HasIndex("UserId");
+
+                    b.HasIndex("BudgetId", "Level")
+                        .IsUnique();
 
                     b.ToTable("Alerts");
                 });

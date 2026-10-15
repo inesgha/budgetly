@@ -8,6 +8,16 @@
 @categoryId = {{createCategory.response.body.$.id}}
 @transactionId = {{createTransaction.response.body.$.id}}
 
+# Remplis automatiquement après "Créer un budget" et "Liste des alertes"
+@budgetId = {{createBudget.response.body.$.id}}
+@alertId = {{listAlerts.response.body.$[0].id}}
+
+# Variables du scénario complet (en bas du fichier)
+@alimentationId = {{expenseCategories.response.body.$[0].id}}
+@scenarioBudgetId = {{scenarioBudget.response.body.$.id}}
+@scenarioTx1 = {{scenarioExpense85.response.body.$.id}}
+@scenarioTx2 = {{scenarioExpense20.response.body.$.id}}
+
 
 ######################## AUTHENTIFICATION ########################
 
@@ -162,8 +172,158 @@ DELETE {{Budgetly.Api_HostAddress}}/api/transactions/{{transactionId}}
 Authorization: Bearer {{token}}
 
 
+######################## BUDGETS ########################
+
+### Créer un budget (201) sur la catégorie créée plus haut : remplit @budgetId
+# 400 si la catégorie est un revenu ou n'est pas à vous, 409 si un budget existe déjà ce mois-ci
+# @name createBudget
+POST {{Budgetly.Api_HostAddress}}/api/budgets
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "categoryId": {{categoryId}},
+  "limit": 60.000,
+  "month": 10,
+  "year": 2026
+}
+
+### Budgets du mois en cours (Spent, Remaining, Percent, Status)
+GET {{Budgetly.Api_HostAddress}}/api/budgets
+Authorization: Bearer {{token}}
+
+### Budgets d'un mois précis
+GET {{Budgetly.Api_HostAddress}}/api/budgets?month=10&year=2026
+Authorization: Bearer {{token}}
+
+### Modifier la limite d'un budget (200)
+PUT {{Budgetly.Api_HostAddress}}/api/budgets/{{budgetId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "limit": 80.000
+}
+
+### Supprimer un budget et ses alertes (204)
+DELETE {{Budgetly.Api_HostAddress}}/api/budgets/{{budgetId}}
+Authorization: Bearer {{token}}
+
+
+######################## ALERTES ########################
+
+### Toutes les alertes, les plus récentes d'abord : remplit @alertId
+# @name listAlerts
+GET {{Budgetly.Api_HostAddress}}/api/alerts
+Authorization: Bearer {{token}}
+
+### Seulement les alertes non lues
+GET {{Budgetly.Api_HostAddress}}/api/alerts?unreadOnly=true
+Authorization: Bearer {{token}}
+
+### Nombre d'alertes non lues : { "count": 2 }
+GET {{Budgetly.Api_HostAddress}}/api/alerts/unread-count
+Authorization: Bearer {{token}}
+
+### Marquer une alerte comme lue (204, ou 404)
+PATCH {{Budgetly.Api_HostAddress}}/api/alerts/{{alertId}}/read
+Authorization: Bearer {{token}}
+
+### Marquer toutes les alertes comme lues (204)
+PATCH {{Budgetly.Api_HostAddress}}/api/alerts/read-all
+Authorization: Bearer {{token}}
+
+
+######################## STATISTIQUES ########################
+
+### Résumé du mois en cours (revenus, dépenses, solde, par catégorie, 5 dernières transactions)
+GET {{Budgetly.Api_HostAddress}}/api/stats/summary
+Authorization: Bearer {{token}}
+
+### Résumé d'un mois précis
+GET {{Budgetly.Api_HostAddress}}/api/stats/summary?month=10&year=2026
+Authorization: Bearer {{token}}
+
+### Revenus et dépenses des 6 derniers mois (mois en cours compris, même vides)
+GET {{Budgetly.Api_HostAddress}}/api/stats/monthly?months=6
+Authorization: Bearer {{token}}
+
+
 ######################## NETTOYAGE ########################
 
 ### Supprimer une catégorie (204, ou 409 si des transactions ou budgets l'utilisent encore)
 DELETE {{Budgetly.Api_HostAddress}}/api/categories/{{categoryId}}
+Authorization: Bearer {{token}}
+
+
+######################## SCÉNARIO COMPLET : ALERTES 80 % ET 100 % ########################
+# À lancer dans l'ordre, après "Connexion".
+# Pour des chiffres exacts, Alimentation ne doit avoir ni budget ni dépense en octobre 2026.
+
+### 1. Catégories de dépense : la 1re (ordre alphabétique) est Alimentation -> remplit @alimentationId
+# @name expenseCategories
+GET {{Budgetly.Api_HostAddress}}/api/categories?type=Expense
+Authorization: Bearer {{token}}
+
+### 2. Budget de 100 DT pour Alimentation en octobre 2026 (201, status "ok")
+# @name scenarioBudget
+POST {{Budgetly.Api_HostAddress}}/api/budgets
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "categoryId": {{alimentationId}},
+  "limit": 100.000,
+  "month": 10,
+  "year": 2026
+}
+
+### 3. Dépense de 85 DT -> 85 % : crée l'alerte de niveau 80
+# @name scenarioExpense85
+POST {{Budgetly.Api_HostAddress}}/api/transactions
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "amount": 85.000,
+  "date": "2026-10-10",
+  "note": "Courses de la semaine",
+  "categoryId": {{alimentationId}}
+}
+
+### 4. Alertes : "Alimentation : 85 % du budget atteint (85,000 / 100,000 DT)"
+GET {{Budgetly.Api_HostAddress}}/api/alerts
+Authorization: Bearer {{token}}
+
+### 5. Dépense de 20 DT -> 105 % : crée l'alerte de niveau 100
+# @name scenarioExpense20
+POST {{Budgetly.Api_HostAddress}}/api/transactions
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "amount": 20.000,
+  "date": "2026-10-12",
+  "note": "Marché",
+  "categoryId": {{alimentationId}}
+}
+
+### 6. Alertes : la nouvelle "Alimentation : 105 % du budget atteint (105,000 / 100,000 DT)" en premier
+GET {{Budgetly.Api_HostAddress}}/api/alerts
+Authorization: Bearer {{token}}
+
+### 7. Budget : spent 105, remaining -5, percent 105, status "exceeded"
+GET {{Budgetly.Api_HostAddress}}/api/budgets?month=10&year=2026
+Authorization: Bearer {{token}}
+
+### 8. Nettoyage du scénario : budget et alertes (204)
+DELETE {{Budgetly.Api_HostAddress}}/api/budgets/{{scenarioBudgetId}}
+Authorization: Bearer {{token}}
+
+### 9. Nettoyage du scénario : dépense de 85 DT (204)
+DELETE {{Budgetly.Api_HostAddress}}/api/transactions/{{scenarioTx1}}
+Authorization: Bearer {{token}}
+
+### 10. Nettoyage du scénario : dépense de 20 DT (204)
+DELETE {{Budgetly.Api_HostAddress}}/api/transactions/{{scenarioTx2}}
 Authorization: Bearer {{token}}

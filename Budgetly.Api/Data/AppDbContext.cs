@@ -34,6 +34,11 @@ public class AppDbContext : DbContext
             .HasIndex(b => new { b.CategoryId, b.Month, b.Year })
             .IsUnique();
 
+        // Une seule alerte 80 % et une seule alerte 100 % par budget
+        modelBuilder.Entity<Alert>()
+            .HasIndex(a => new { a.BudgetId, a.Level })
+            .IsUnique();
+
         // Pas de suppression en cascade : évite l'erreur SQL Server "multiple cascade paths"
         foreach (var foreignKey in modelBuilder.Model.GetEntityTypes().SelectMany(e => e.GetForeignKeys()))
         {
