@@ -1,15 +1,19 @@
 import axios from 'axios'
 import { getStoredToken } from './session'
 
-const apiUrl = import.meta.env.VITE_API_URL
+// Seule source de l'adresse de l'API : la variable VITE_API_URL (fichier .env en local, réglage Vercel en ligne).
+// Le "/" final éventuel est retiré : "https://api.exemple.net/" + "/api/..." donnerait "//api/...".
+const apiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, '')
 
 if (!apiUrl) {
-  console.error('VITE_API_URL est absente : copie .env.example en .env puis relance "npm run dev".')
+  console.error('VITE_API_URL est absente : copie .env.example en .env puis relance "npm run dev" (ou définis-la sur Vercel).')
 }
 
 const client = axios.create({
   baseURL: apiUrl,
-  timeout: 15000,
+  // 90 s : en ligne, l'API gratuite s'endort et la base Azure se met en pause ; le premier appel
+  // peut prendre jusqu'à une minute le temps du réveil (au-delà, on abandonne avec un message clair).
+  timeout: 90_000,
 })
 
 // Fonction appelée quand l'API répond 401 ; fournie par AuthProvider (déconnexion).

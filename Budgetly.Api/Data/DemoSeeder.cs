@@ -6,7 +6,7 @@ namespace Budgetly.Api.Data;
 
 /// <summary>
 /// Compte de démonstration : une étudiante tunisienne avec 6 mois de revenus, de dépenses, de budgets et d'alertes.
-/// Lancé uniquement par "dotnet run -- --seed-demo" en Development (voir Program.cs).
+/// Lancé uniquement par la commande explicite "dotnet run -- --seed-demo" (voir Program.cs), quel que soit l'environnement.
 /// Relancé, il supprime puis recrée UNIQUEMENT le compte démo (filtre sur son UserId) : les autres comptes ne sont jamais touchés.
 /// </summary>
 public static class DemoSeeder
@@ -75,9 +75,25 @@ public static class DemoSeeder
     /// <returns>Un résumé de ce qui a été créé</returns>
     public static async Task<string> SeedAsync(AppDbContext db, AlertService alertService, DateOnly today)
     {
-        // Tout ou rien : en cas d'erreur, l'ancien compte démo reste intact
-        await using var dbTransaction = await db.Database.BeginTransactionAsync();
+        // Avec EnableRetryOnFailure, une transaction ouverte à la main doit passer par la "stratégie d'exécution" :
+        // si la connexion tombe (base Azure qui se réveille), EF rejoue TOUT le bloc depuis le début.
+        var strategy = db.Database.CreateExecutionStrategy();
 
+        return await strategy.ExecuteAsync(async () =>
+        {
+            // Une tentative précédente a pu laisser des entités en mémoire : on repart de zéro
+            db.ChangeTracker.Clear();
+
+            // Tout ou rien : en cas d'erreur, l'ancien compte démo reste intact
+            await using var dbTransaction = await db.Database.BeginTransactionAsync();
+            var summary = await SeedInTransactionAsync(db, alertService, today);
+            await dbTransaction.CommitAsync();
+            return summary;
+        });
+    }
+
+    private static async Task<string> SeedInTransactionAsync(AppDbContext db, AlertService alertService, DateOnly today)
+    {
         await DeleteDemoAccountAsync(db);
 
         var user = new User
@@ -166,8 +182,6 @@ public static class DemoSeeder
 
             await BackdateAlertsAsync(db, budgets, transactions, markAsRead: !isCurrentMonth);
         }
-
-        await dbTransaction.CommitAsync();
 
         var alertCount = await db.Alerts.CountAsync(a => a.UserId == user.Id);
         return $"{transactionCount} transactions, {budgetCount} budgets et {alertCount} alertes sur {MonthsOfHistory} mois";

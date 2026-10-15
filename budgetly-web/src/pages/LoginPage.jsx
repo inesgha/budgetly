@@ -11,6 +11,7 @@ import { validateEmail, validatePassword } from '../components/auth/validation'
 import { useAuth } from '../hooks/useAuth'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useForm } from '../hooks/useForm'
+import { useSlowFlag } from '../hooks/useSlowFlag'
 
 const VALIDATORS = { email: validateEmail, password: validatePassword }
 const INITIAL_VALUES = { email: '', password: '' }
@@ -27,6 +28,8 @@ export default function LoginPage() {
   // Quel bouton a lancé la connexion en cours : "form", "demo" ou null
   const [pending, setPending] = useState(null)
   const [serverError, setServerError] = useState('')
+  // Connexion en cours depuis plus de 5 s : en ligne, le serveur gratuit est sans doute en train de se réveiller
+  const slow = useSlowFlag(pending !== null)
 
   async function signIn(email, password, source) {
     setServerError('')
@@ -74,6 +77,7 @@ export default function LoginPage() {
         <FormMessage tone="info">Ta session a expiré. Reconnecte-toi pour continuer.</FormMessage>
       )}
       <FormMessage>{serverError}</FormMessage>
+      {slow && <FormMessage tone="info">Le serveur se réveille, cela peut prendre jusqu'à une minute…</FormMessage>}
 
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <TextField

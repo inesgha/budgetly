@@ -12,6 +12,20 @@ Budgetly est une application web complète (API REST + interface React) pensée 
 
 ---
 
+## Démo en ligne
+
+**[LIEN_DEMO](LIEN_DEMO)**
+
+| Email | Mot de passe |
+| --- | --- |
+| `demo@budgetly.tn` | `Demo1234!` |
+
+Ou plus simplement : bouton **« Essayer avec le compte démo »** sur la page de connexion.
+
+> **Premier chargement lent ?** C'est normal : l'API (Azure App Service, offre gratuite) s'endort quand personne ne l'utilise, et la base Azure SQL serverless se met en pause. Le premier appel les réveille, ce qui peut prendre jusqu'à une minute ; ensuite, tout est rapide.
+
+---
+
 ## Aperçu
 
 | Tableau de bord | Transactions |
@@ -49,6 +63,7 @@ Budgetly est une application web complète (API REST + interface React) pensée 
 | Base de données | SQL Server (Express) |
 | Sécurité | JWT (Bearer), BCrypt, limitation de débit, CORS |
 | Tests | xUnit, EF Core InMemory |
+| Hébergement | Azure App Service (API), Azure SQL Database serverless (base), Vercel (front) |
 
 ### Architecture
 
@@ -213,7 +228,11 @@ dotnet test
 | `demo@budgetly.tn` | `Demo1234!` |
 
 Sur la page de connexion, le bouton **« Essayer avec le compte démo »** remplit et envoie ces identifiants.
-Le compte est créé par `dotnet run -- --seed-demo`, **uniquement en environnement Development**. Relancer la commande recrée le compte démo sans toucher aux autres comptes.
+Le compte est créé par `dotnet run -- --seed-demo` : jamais au démarrage normal de l'API, uniquement sur cette commande explicite (ce qui permet aussi de remplir la base de production depuis son PC). Relancer la commande recrée le compte démo sans toucher aux autres comptes.
+
+### 4. Mise en ligne
+
+Le guide pas à pas (Azure SQL Database, Azure App Service, Vercel) est dans **[DEPLOY.md](DEPLOY.md)**.
 
 ---
 
@@ -249,8 +268,8 @@ Budgetly/
 **Ines Ghammam** — étudiante en Licence DSI (Développement des Systèmes d'Information) à l'ISET de Mahdia.
 
 - GitHub : [github.com/inesgha](https://github.com/inesgha)
-- LinkedIn : [www.linkedin.com/in/ines-ghammam-2a6794350](LIEN_LINKEDIN)
-- Portfolio : [https://inesgha.github.io/](LIEN_PORTFOLIO)
+- LinkedIn : [linkedin.com/in/ines-ghammam-2a6794350](https://www.linkedin.com/in/ines-ghammam-2a6794350)
+- Portfolio : [inesgha.github.io](https://inesgha.github.io/)
 
 ---
 
@@ -260,4 +279,5 @@ Budgetly/
 
 - **Stack**: React 19 + Vite + Tailwind CSS 4 + Recharts (front-end), ASP.NET Core 10 Web API + Entity Framework Core 10 (back-end), SQL Server, xUnit.
 - **Highlights**: JWT authentication with BCrypt password hashing, per-user data isolation (404 on foreign resources), alert logic in a dedicated, unit-tested service with a unique index against duplicates, SQL-side aggregations, `DateOnly` dates to avoid UTC shifts, rate limiting on authentication endpoints, global ProblemDetails error handling, responsive and accessible French UI.
+- **Live demo**: [LIEN_DEMO](LIEN_DEMO) — the first load can take up to a minute while the free Azure API and serverless database wake up.
 - **Run it**: set `Jwt:Key` with `dotnet user-secrets`, run `dotnet ef database update` and `dotnet run` in `Budgetly.Api`, then `npm install` and `npm run dev` in `budgetly-web`. Demo account: `demo@budgetly.tn` / `Demo1234!` (created with `dotnet run -- --seed-demo`).

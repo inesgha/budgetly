@@ -10,6 +10,7 @@ import { MIN_PASSWORD_LENGTH, validateEmail, validateName, validatePassword } fr
 import { useAuth } from '../hooks/useAuth'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useForm } from '../hooks/useForm'
+import { useSlowFlag } from '../hooks/useSlowFlag'
 
 const VALIDATORS = { name: validateName, email: validateEmail, password: validatePassword }
 const INITIAL_VALUES = { name: '', email: '', password: '' }
@@ -21,6 +22,8 @@ export default function RegisterPage() {
   const { values, errors, setErrors, handleChange, validate } = useForm(INITIAL_VALUES, VALIDATORS)
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState('')
+  // Inscription en cours depuis plus de 5 s : le serveur gratuit est sans doute en train de se réveiller
+  const slow = useSlowFlag(submitting)
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -55,6 +58,7 @@ export default function RegisterPage() {
   return (
     <AuthLayout title="Créer un compte" description="Gratuit, et prêt en moins d'une minute.">
       <FormMessage>{serverError}</FormMessage>
+      {slow && <FormMessage tone="info">Le serveur se réveille, cela peut prendre jusqu'à une minute…</FormMessage>}
 
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <TextField
