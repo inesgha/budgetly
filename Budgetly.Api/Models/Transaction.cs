@@ -11,7 +11,8 @@ public class Transaction
     public decimal Amount { get; set; }
 
     public TransactionType Type { get; set; }
-    public DateTime Date { get; set; }
+    // Jour de la transaction, sans heure ni fuseau horaire (colonne SQL "date")
+    public DateOnly Date { get; set; }
     public string? Note { get; set; }
 
     public int UserId { get; set; }

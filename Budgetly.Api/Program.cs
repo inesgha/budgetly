@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using Budgetly.Api.Data;
 using Budgetly.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -51,7 +52,9 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod());
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    // Les enums circulent en texte dans le JSON ("Expense"/"Income") plutôt qu'en nombre (0/1)
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 

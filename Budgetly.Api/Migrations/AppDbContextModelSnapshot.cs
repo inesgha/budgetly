@@ -110,7 +110,8 @@ namespace Budgetly.Api.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -120,7 +121,8 @@ namespace Budgetly.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "Name", "Type")
+                        .IsUnique();
 
                     b.ToTable("Categories");
                 });
@@ -140,8 +142,8 @@ namespace Budgetly.Api.Migrations
                     b.Property<int>("CategoryId")
                         .HasColumnType("int");
 
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("datetime2");
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
 
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)");

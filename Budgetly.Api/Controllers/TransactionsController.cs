@@ -1,0 +1,181 @@
+using Budgetly.Api.Data;
+using Budgetly.Api.Dtos;
+using Budgetly.Api.Extensions;
+using Budgetly.Api.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace Budgetly.Api.Controllers;
+
+[ApiController]
+[Authorize]
+[Route("api/transactions")]
+public class TransactionsController : ControllerBase
+{
+    private const int MaxPageSize = 100;
+
+    private readonly AppDbContext _db;
+
+    public TransactionsController(AppDbContext db)
+    {
+        _db = db;
+    }
+
+    [HttpGet]
+    public async Task<ActionResult<PagedResult<TransactionDto>>> GetAll([FromQuery] TransactionQuery filters)
+    {
+        var userId = User.GetUserId();
+
+        if (filters.Month is not null && filters.Year is null)
+        {
+            ModelState.AddModelError(nameof(filters.Year), "L'année est obligatoire quand le mois est indiqué.");
+            return ValidationProblem(ModelState);
+        }
+
+        var page = Math.Max(filters.Page, 1);
+        var pageSize = Math.Clamp(filters.PageSize, 1, MaxPageSize);
+
+        var query = _db.Transactions
+            .AsNoTracking()
+            .Where(t => t.UserId == userId);
+
+        // Intervalle de dates [début, fin[ plutôt que t.Date.Month : SQL Server peut utiliser un index
+        if (filters.Year is not null)
+        {
+            var start = new DateOnly(filters.Year.Value, filters.Month ?? 1, 1);
+            var end = filters.Month is not null ? start.AddMonths(1) : start.AddYears(1);
+
+            query = query.Where(t => t.Date >= start && t.Date < end);
+        }
+
+        if (filters.CategoryId is not null)
+        {
+            query = query.Where(t => t.CategoryId == filters.CategoryId);
+        }
+
+        if (filters.Type is not null)
+        {
+            query = query.Where(t => t.Type == filters.Type);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Search))
+        {
+            var search = filters.Search.Trim();
+            query = query.Where(t => (t.Note != null && t.Note.Contains(search)) || t.Category.Name.Contains(search));
+        }
+
+        var totalCount = await query.CountAsync();
+
+        var items = await query
+            .OrderByDescending(t => t.Date)
+            .ThenByDescending(t => t.Id) // ordre stable entre les pages quand deux dates sont égales
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(TransactionDto.Projection)
+            .ToListAsync();
+
+        return new PagedResult<TransactionDto>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount
+        };
+    }
+
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<TransactionDto>> GetById(int id)
+    {
+        var userId = User.GetUserId();
+
+        var transaction = await _db.Transactions
+            .AsNoTracking()
+            .Where(t => t.Id == id && t.UserId == userId)
+            .Select(TransactionDto.Projection)
+            .FirstOrDefaultAsync();
+
+        return transaction is null ? NotFound() : transaction;
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<TransactionDto>> Create(CreateTransactionRequest request)
+    {
+        var userId = User.GetUserId();
+
+        var category = await FindUserCategoryAsync(request.CategoryId, userId);
+        if (category is null)
+        {
+            return CategoryNotFound();
+        }
+
+        var transaction = new Transaction
+        {
+            Amount = decimal.Round(request.Amount, 3),
+            Type = category.Type,
+            Date = request.Date!.Value,
+            Note = NormalizeNote(request.Note),
+            UserId = userId,
+            Category = category
+        };
+
+        _db.Transactions.Add(transaction);
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetById), new { id = transaction.Id }, TransactionDto.FromTransaction(transaction));
+    }
+
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<TransactionDto>> Update(int id, UpdateTransactionRequest request)
+    {
+        var userId = User.GetUserId();
+
+        var transaction = await _db.Transactions.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
+        if (transaction is null)
+        {
+            return NotFound();
+        }
+
+        var category = await FindUserCategoryAsync(request.CategoryId, userId);
+        if (category is null)
+        {
+            return CategoryNotFound();
+        }
+
+        transaction.Amount = decimal.Round(request.Amount, 3);
+        transaction.Type = category.Type;
+        transaction.Date = request.Date!.Value;
+        transaction.Note = NormalizeNote(request.Note);
+        transaction.Category = category;
+
+        await _db.SaveChangesAsync();
+
+        return TransactionDto.FromTransaction(transaction);
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var userId = User.GetUserId();
+
+        var deleted = await _db.Transactions
+            .Where(t => t.Id == id && t.UserId == userId)
+            .ExecuteDeleteAsync();
+
+        return deleted == 0 ? NotFound() : NoContent();
+    }
+
+    // Chargée avec suivi (sans AsNoTracking) car elle est rattachée à la transaction enregistrée
+    private Task<Category?> FindUserCategoryAsync(int categoryId, int userId) =>
+        _db.Categories.FirstOrDefaultAsync(c => c.Id == categoryId && c.UserId == userId);
+
+    // Même réponse que la catégorie n'existe pas ou qu'elle appartienne à un autre utilisateur
+    private ActionResult CategoryNotFound()
+    {
+        ModelState.AddModelError(nameof(CreateTransactionRequest.CategoryId), "Cette catégorie n'existe pas.");
+        return ValidationProblem(ModelState);
+    }
+
+    private static string? NormalizeNote(string? note) =>
+        string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+}

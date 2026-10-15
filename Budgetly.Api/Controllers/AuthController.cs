@@ -1,13 +1,11 @@
-using System.Security.Claims;
 using Budgetly.Api.Data;
 using Budgetly.Api.Dtos;
+using Budgetly.Api.Extensions;
 using Budgetly.Api.Models;
 using Budgetly.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Budgetly.Api.Controllers;
 
@@ -64,7 +62,7 @@ public class AuthController : ControllerBase
             await _db.SaveChangesAsync();
         }
         // Deux inscriptions simultanées avec le même email : l'index unique bloque la seconde
-        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+        catch (DbUpdateException ex) when (ex.IsUniqueConstraintViolation())
         {
             return Conflict(new { message = "Un compte existe déjà avec cet email." });
         }
@@ -91,10 +89,7 @@ public class AuthController : ControllerBase
     [HttpGet("me")]
     public async Task<ActionResult<UserDto>> Me()
     {
-        if (!int.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var userId))
-        {
-            return Unauthorized();
-        }
+        var userId = User.GetUserId();
 
         // Le token peut être encore valide alors que le compte a été supprimé
         var user = await _db.Users.FindAsync(userId);

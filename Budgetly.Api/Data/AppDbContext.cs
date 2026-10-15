@@ -24,6 +24,11 @@ public class AppDbContext : DbContext
             .HasIndex(u => u.Email)
             .IsUnique();
 
+        // Pas deux catégories du même nom et du même type pour un utilisateur
+        modelBuilder.Entity<Category>()
+            .HasIndex(c => new { c.UserId, c.Name, c.Type })
+            .IsUnique();
+
         // Un seul budget par catégorie et par mois
         modelBuilder.Entity<Budget>()
             .HasIndex(b => new { b.CategoryId, b.Month, b.Year })

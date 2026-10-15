@@ -1,5 +1,16 @@
 @Budgetly.Api_HostAddress = http://localhost:5194
 
+# Rempli automatiquement après la requête "Connexion" (# @name login).
+# Si votre outil ne le gère pas, remplacez par le token copié : @token = eyJhbGciOi...
+@token = {{login.response.body.$.token}}
+
+# Remplis automatiquement après "Créer une catégorie" et "Créer une transaction"
+@categoryId = {{createCategory.response.body.$.id}}
+@transactionId = {{createTransaction.response.body.$.id}}
+
+
+######################## AUTHENTIFICATION ########################
+
 ### Inscription (201, ou 409 si l'email existe déjà)
 POST {{Budgetly.Api_HostAddress}}/api/auth/register
 Content-Type: application/json
@@ -20,7 +31,7 @@ Content-Type: application/json
   "password": "court"
 }
 
-### Connexion (200) : le token est réutilisé par la requête "me" ci-dessous
+### Connexion (200) : À LANCER EN PREMIER, elle remplit @token
 # @name login
 POST {{Budgetly.Api_HostAddress}}/api/auth/login
 Content-Type: application/json
@@ -39,9 +50,120 @@ Content-Type: application/json
   "password": "mauvais-mot-de-passe"
 }
 
-### Utilisateur connecté (200) : lancez d'abord la requête "Connexion"
+### Utilisateur connecté (200)
 GET {{Budgetly.Api_HostAddress}}/api/auth/me
-Authorization: Bearer {{login.response.body.$.token}}
+Authorization: Bearer {{token}}
 
 ### Sans token (401)
 GET {{Budgetly.Api_HostAddress}}/api/auth/me
+
+
+######################## CATÉGORIES ########################
+
+### Toutes mes catégories
+GET {{Budgetly.Api_HostAddress}}/api/categories
+Authorization: Bearer {{token}}
+
+### Seulement les catégories de dépense (ou ?type=Income)
+GET {{Budgetly.Api_HostAddress}}/api/categories?type=Expense
+Authorization: Bearer {{token}}
+
+### Créer une catégorie (201, ou 409 si le nom existe déjà pour ce type) : remplit @categoryId
+# @name createCategory
+POST {{Budgetly.Api_HostAddress}}/api/categories
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Café",
+  "color": "#A1B2C3",
+  "icon": "coffee",
+  "type": "Expense"
+}
+
+### Créer une catégorie invalide (400 : nom vide, couleur pas au format #RRGGBB)
+POST {{Budgetly.Api_HostAddress}}/api/categories
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "",
+  "color": "rouge",
+  "type": "Expense"
+}
+
+### Modifier une catégorie (200)
+PUT {{Budgetly.Api_HostAddress}}/api/categories/{{categoryId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Café & thé",
+  "color": "#112233",
+  "icon": "mug",
+  "type": "Expense"
+}
+
+######################## TRANSACTIONS ########################
+
+### Créer une transaction (201) : le type est repris de la catégorie, remplit @transactionId
+# @name createTransaction
+POST {{Budgetly.Api_HostAddress}}/api/transactions
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "amount": 4.500,
+  "date": "2026-10-15",
+  "note": "Espresso",
+  "categoryId": {{categoryId}}
+}
+
+### Créer une transaction invalide (400 : montant à 0, date manquante, catégorie inexistante)
+POST {{Budgetly.Api_HostAddress}}/api/transactions
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "amount": 0,
+  "categoryId": 999999
+}
+
+### Liste paginée (page 1, 20 par page, plus récentes en premier)
+GET {{Budgetly.Api_HostAddress}}/api/transactions
+Authorization: Bearer {{token}}
+
+### Liste avec filtres : octobre 2026, dépenses, recherche "café", 10 par page
+GET {{Budgetly.Api_HostAddress}}/api/transactions?month=10&year=2026&type=Expense&search=café&page=1&pageSize=10
+Authorization: Bearer {{token}}
+
+### Liste filtrée par catégorie
+GET {{Budgetly.Api_HostAddress}}/api/transactions?categoryId={{categoryId}}
+Authorization: Bearer {{token}}
+
+### Une transaction (200, ou 404)
+GET {{Budgetly.Api_HostAddress}}/api/transactions/{{transactionId}}
+Authorization: Bearer {{token}}
+
+### Modifier une transaction (200)
+PUT {{Budgetly.Api_HostAddress}}/api/transactions/{{transactionId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "amount": 5.250,
+  "date": "2026-10-16",
+  "note": "Espresso + croissant",
+  "categoryId": {{categoryId}}
+}
+
+### Supprimer une transaction (204, puis 404 si on recommence)
+DELETE {{Budgetly.Api_HostAddress}}/api/transactions/{{transactionId}}
+Authorization: Bearer {{token}}
+
+
+######################## NETTOYAGE ########################
+
+### Supprimer une catégorie (204, ou 409 si des transactions ou budgets l'utilisent encore)
+DELETE {{Budgetly.Api_HostAddress}}/api/categories/{{categoryId}}
+Authorization: Bearer {{token}}
