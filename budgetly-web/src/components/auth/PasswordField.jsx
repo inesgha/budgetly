@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { EyeIcon, EyeOffIcon } from '../icons'
-import TextField from './TextField'
+import TextField from '../ui/TextField'
 
 export default function PasswordField({ id, ...props }) {
   const [visible, setVisible] = useState(false)

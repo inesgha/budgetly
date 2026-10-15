@@ -15,12 +15,14 @@
   --color-primary-hover: #432CB8;
   --color-primary-light: #ECE8FF;
   --color-primary-soft: #9C87FF;
+  --color-primary-pale: #D9D3FA;
 
   --color-success: #1E7A50;
   --color-warning: #E8743B;
   --color-warning-ink: #9A4A0C;
   --color-danger: #B42318;
   --color-danger-light: #FDECEA;
+  --color-danger-border: #F3C4BE;
 
   /* 12 px : boutons et champs ; 18 px : cartes */
   --radius-control: 12px;

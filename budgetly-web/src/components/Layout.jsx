@@ -1,8 +1,11 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Suspense, useMemo } from 'react'
+import { NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { monthSearch } from '../hooks/useSelectedMonth'
 import { useUnreadAlerts } from '../hooks/useUnreadAlerts'
 import Logo from './Logo'
 import { BellIcon, ChartIcon, HomeIcon, LogoutIcon, SettingsIcon, TransactionsIcon, WalletIcon } from './icons'
+import Skeleton, { LoadingRegion } from './ui/Skeleton'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Tableau de bord', shortLabel: 'Accueil', Icon: HomeIcon, end: true },
@@ -21,6 +24,12 @@ function formatCurrentMonth() {
 export default function Layout() {
   const { user, logout } = useAuth()
   const firstName = user?.name?.trim().split(/\s+/)[0] ?? ''
+  const { count: unreadCount, refresh: refreshAlerts } = useUnreadAlerts()
+  // Le mois choisi (?month=&year=) suit l'utilisateur d'une page à l'autre
+  const [searchParams] = useSearchParams()
+  const search = monthSearch(searchParams)
+  // Fourni aux pages (useOutletContext) : recharger la pastille après une modification
+  const outletContext = useMemo(() => ({ refreshAlerts }), [refreshAlerts])
 
   return (
     <div className="min-h-dvh md:pl-60">
@@ -31,7 +40,7 @@ export default function Layout() {
         Aller au contenu
       </a>
 
-      <Sidebar user={user} onLogout={logout} />
+      <Sidebar user={user} onLogout={logout} search={search} />
 
       <div className="flex min-h-dvh flex-col pb-24 md:pb-0">
         <header className="flex items-center justify-between gap-4 px-4 pt-5 pb-4 md:px-8 md:pt-8 md:pb-6">
@@ -46,7 +55,7 @@ export default function Layout() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <AlertsButton />
+            <AlertsButton count={unreadCount} search={search} />
             {/* Sur mobile, la barre latérale (et son bouton) n'est pas affichée */}
             <button
               type="button"
@@ -60,16 +69,26 @@ export default function Layout() {
         </header>
 
         <main id="contenu" tabIndex={-1} className="flex-1 px-4 pb-8 focus:outline-none md:px-8">
-          <Outlet />
+          {/* Pendant le téléchargement d'une page (chargement à la demande) */}
+          <Suspense
+            fallback={
+              <LoadingRegion label="Chargement de la page" className="space-y-6">
+                <Skeleton className="h-9 w-56" />
+                <Skeleton className="h-32" rounded="rounded-card" />
+              </LoadingRegion>
+            }
+          >
+            <Outlet context={outletContext} />
+          </Suspense>
         </main>
       </div>
 
-      <MobileNav />
+      <MobileNav search={search} />
     </div>
   )
 }
 
-function Sidebar({ user, onLogout }) {
+function Sidebar({ user, onLogout, search }) {
   return (
     <aside
       data-surface="dark"
@@ -84,7 +103,7 @@ function Sidebar({ user, onLogout }) {
           {NAV_ITEMS.map(({ to, label, Icon, end }) => (
             <li key={to}>
               <NavLink
-                to={to}
+                to={{ pathname: to, search }}
                 end={end}
                 className={({ isActive }) =>
                   `flex items-center gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition-colors ${
@@ -116,7 +135,7 @@ function Sidebar({ user, onLogout }) {
   )
 }
 
-function MobileNav() {
+function MobileNav({ search }) {
   return (
     <nav
       aria-label="Navigation principale"
@@ -127,7 +146,7 @@ function MobileNav() {
         {NAV_ITEMS.map(({ to, label, shortLabel, Icon, end }) => (
           <li key={to} className="flex-1">
             <NavLink
-              to={to}
+              to={{ pathname: to, search }}
               end={end}
               aria-label={label}
               className={({ isActive }) =>
@@ -156,9 +175,8 @@ function MobileNav() {
   )
 }
 
-function AlertsButton() {
+function AlertsButton({ count, search }) {
   const navigate = useNavigate()
-  const { count } = useUnreadAlerts()
   const label =
     count > 0 ? `Alertes : ${count} non lue${count > 1 ? 's' : ''}` : 'Alertes : aucune non lue'
 
@@ -166,7 +184,7 @@ function AlertsButton() {
     // Les alertes concernent les budgets : en attendant une page dédiée, la cloche y mène
     <button
       type="button"
-      onClick={() => navigate('/budgets')}
+      onClick={() => navigate(`/budgets${search}`)}
       aria-label={label}
       className="relative grid size-11 place-items-center rounded-control border border-line bg-surface text-ink transition-colors hover:bg-primary-light hover:text-primary-hover"
     >

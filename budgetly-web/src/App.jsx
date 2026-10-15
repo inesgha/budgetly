@@ -1,15 +1,19 @@
+import { lazy } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import GuestRoute from './components/GuestRoute'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
-import BudgetsPage from './pages/BudgetsPage'
-import DashboardPage from './pages/DashboardPage'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
 import RegisterPage from './pages/RegisterPage'
-import SettingsPage from './pages/SettingsPage'
-import StatsPage from './pages/StatsPage'
-import TransactionsPage from './pages/TransactionsPage'
+
+// Pages de l'app chargées à la demande : Recharts (lourd) n'est téléchargé qu'à l'ouverture du tableau de bord.
+// Le <Suspense> qui affiche le chargement est dans Layout, autour du contenu.
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const TransactionsPage = lazy(() => import('./pages/TransactionsPage'))
+const BudgetsPage = lazy(() => import('./pages/BudgetsPage'))
+const StatsPage = lazy(() => import('./pages/StatsPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 export default function App() {
   return (

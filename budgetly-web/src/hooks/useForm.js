@@ -34,5 +34,11 @@ export function useForm(initialValues, validators) {
     return nextErrors
   }, [validators, values])
 
-  return { values, errors, setErrors, handleChange, validate }
+  // Modifie un champ depuis le code (ex. vider la catégorie quand on passe de Dépense à Revenu)
+  const setValue = useCallback((name, value) => {
+    setValues((current) => ({ ...current, [name]: value }))
+    setErrors((current) => (current[name] ? { ...current, [name]: '' } : current))
+  }, [])
+
+  return { values, errors, setErrors, setValue, handleChange, validate }
 }
