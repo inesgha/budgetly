@@ -72,7 +72,7 @@ export default function SettingsPage() {
       <h1 className="font-display text-2xl font-bold tracking-tight text-ink md:text-3xl">Paramètres</h1>
 
       <Card title="Mon profil">
-        <dl className="grid gap-4 sm:grid-cols-3">
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <dt className="text-sm text-muted">Nom</dt>
             <dd className="mt-1 font-medium break-words text-ink">{user?.name}</dd>
@@ -101,7 +101,7 @@ export default function SettingsPage() {
           onRetry={categories.reload}
           loadingLabel="Chargement des catégories"
           skeleton={
-            <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {[0, 1].map((i) => (
                 <div key={i} className="space-y-3">
                   {[0, 1, 2, 3].map((j) => (
@@ -113,7 +113,7 @@ export default function SettingsPage() {
           }
         >
           {() => (
-            <div className="grid gap-6 sm:grid-cols-2 sm:gap-8">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8">
               <CategoryList
                 title="Dépenses"
                 categories={expenseCategories}

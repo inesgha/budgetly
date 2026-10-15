@@ -20,6 +20,9 @@ public class TransactionQuery
     [MaxLength(100, ErrorMessage = "La recherche ne doit pas dépasser 100 caractères.")]
     public string? Search { get; set; }
 
+    // Borne haute : sans elle, (page - 1) * pageSize dépasse la capacité d'un int, devient négatif,
+    // et SQL Server refuse le décalage (erreur 500). Avec elle, la requête répond 400.
+    [Range(1, 1_000_000, ErrorMessage = "La page doit être entre 1 et 1 000 000.")]
     public int Page { get; set; } = 1;
 
     public int PageSize { get; set; } = 20;

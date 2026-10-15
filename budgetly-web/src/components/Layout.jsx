@@ -1,9 +1,10 @@
 import { Suspense, useCallback, useMemo, useState } from 'react'
-import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { monthSearch } from '../hooks/useSelectedMonth'
 import { useUnreadAlerts } from '../hooks/useUnreadAlerts'
 import AlertsMenu from './alerts/AlertsMenu'
+import ErrorBoundary from './ErrorBoundary'
 import Logo from './Logo'
 import { ChartIcon, HomeIcon, LogoutIcon, SettingsIcon, TransactionsIcon, WalletIcon } from './icons'
 import Skeleton, { LoadingRegion } from './ui/Skeleton'
@@ -24,6 +25,7 @@ export default function Layout() {
   const [alertsVersion, setAlertsVersion] = useState(0)
   // Le mois choisi (?month=&year=) suit l'utilisateur d'une page à l'autre
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const search = monthSearch(searchParams)
 
   // Après chaque création / modification / suppression : pastille de la cloche + listes d'alertes
@@ -71,17 +73,20 @@ export default function Layout() {
         </header>
 
         <main id="contenu" tabIndex={-1} className="flex-1 px-4 pb-8 focus:outline-none md:px-8">
-          {/* Pendant le téléchargement d'une page (chargement à la demande) */}
-          <Suspense
-            fallback={
-              <LoadingRegion label="Chargement de la page" className="space-y-6">
-                <Skeleton className="h-9 w-56" />
-                <Skeleton className="h-32" rounded="rounded-card" />
-              </LoadingRegion>
-            }
-          >
-            <Outlet context={outletContext} />
-          </Suspense>
+          {/* Une erreur dans une page n'efface pas la navigation ; changer de page la fait disparaître */}
+          <ErrorBoundary variant="inline" resetKey={location.pathname}>
+            {/* Pendant le téléchargement d'une page (chargement à la demande) */}
+            <Suspense
+              fallback={
+                <LoadingRegion label="Chargement de la page" className="space-y-6">
+                  <Skeleton className="h-9 w-56" />
+                  <Skeleton className="h-32" rounded="rounded-card" />
+                </LoadingRegion>
+              }
+            >
+              <Outlet context={outletContext} />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
 

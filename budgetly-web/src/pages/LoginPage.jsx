@@ -6,6 +6,7 @@ import FormMessage from '../components/auth/FormMessage'
 import PasswordField from '../components/auth/PasswordField'
 import SubmitButton from '../components/auth/SubmitButton'
 import TextField from '../components/ui/TextField'
+import Button from '../components/ui/Button'
 import { validateEmail, validatePassword } from '../components/auth/validation'
 import { useAuth } from '../hooks/useAuth'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -14,35 +15,57 @@ import { useForm } from '../hooks/useForm'
 const VALIDATORS = { email: validateEmail, password: validatePassword }
 const INITIAL_VALUES = { email: '', password: '' }
 
+// Compte créé par "dotnet run -- --seed-demo" (voir le README)
+const DEMO_EMAIL = 'demo@budgetly.tn'
+const DEMO_PASSWORD = 'Demo1234!'
+
 export default function LoginPage() {
   useDocumentTitle('Connexion')
   const { login, sessionExpired } = useAuth()
   const location = useLocation()
-  const { values, errors, setErrors, handleChange, validate } = useForm(INITIAL_VALUES, VALIDATORS)
-  const [submitting, setSubmitting] = useState(false)
+  const { values, errors, setErrors, setValue, handleChange, validate } = useForm(INITIAL_VALUES, VALIDATORS)
+  // Quel bouton a lancé la connexion en cours : "form", "demo" ou null
+  const [pending, setPending] = useState(null)
   const [serverError, setServerError] = useState('')
 
-  async function handleSubmit(event) {
+  async function signIn(email, password, source) {
+    setServerError('')
+    setPending(source)
+    try {
+      await login(email, password)
+      // Pas de navigate ici : GuestRoute redirige dès que l'utilisateur est connecté
+    } catch (error) {
+      const { status, message, fieldErrors } = parseApiError(error)
+      if (source === 'demo' && status === 401) {
+        setServerError("Le compte démo n'est pas disponible pour le moment.")
+      } else {
+        setErrors(fieldErrors)
+        setServerError(message)
+      }
+      setPending(null)
+    }
+  }
+
+  function handleSubmit(event) {
     event.preventDefault()
     const form = event.currentTarget
-    setServerError('')
 
     const firstInvalid = Object.keys(validate())[0]
     if (firstInvalid) {
+      setServerError('')
       form.elements[firstInvalid]?.focus()
       return
     }
 
-    setSubmitting(true)
-    try {
-      await login(values.email.trim(), values.password)
-      // Pas de navigate ici : GuestRoute redirige dès que l'utilisateur est connecté
-    } catch (error) {
-      const { message, fieldErrors } = parseApiError(error)
-      setErrors(fieldErrors)
-      setServerError(message)
-      setSubmitting(false)
-    }
+    signIn(values.email.trim(), values.password, 'form')
+  }
+
+  // Remplit le formulaire (on voit ce qui est envoyé) puis se connecte au compte démo
+  function handleDemo() {
+    setErrors({})
+    setValue('email', DEMO_EMAIL)
+    setValue('password', DEMO_PASSWORD)
+    signIn(DEMO_EMAIL, DEMO_PASSWORD, 'demo')
   }
 
   return (
@@ -72,10 +95,28 @@ export default function LoginPage() {
           onChange={handleChange}
           error={errors.password}
         />
-        <SubmitButton loading={submitting} loadingLabel="Connexion…">
+        <SubmitButton loading={pending === 'form'} disabled={pending !== null} loadingLabel="Connexion…">
           Se connecter
         </SubmitButton>
       </form>
+
+      <div className="my-5 flex items-center gap-3 text-xs font-medium tracking-wide text-muted uppercase" aria-hidden="true">
+        <span className="h-px flex-1 bg-line" />
+        ou
+        <span className="h-px flex-1 bg-line" />
+      </div>
+
+      <Button
+        variant="secondary"
+        size="lg"
+        className="w-full"
+        onClick={handleDemo}
+        disabled={pending !== null}
+        loading={pending === 'demo'}
+        loadingLabel="Connexion au compte démo…"
+      >
+        Essayer avec le compte démo
+      </Button>
 
       <p className="mt-6 text-center text-sm text-muted">
         Pas encore de compte ?{' '}

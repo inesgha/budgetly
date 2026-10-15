@@ -480,3 +480,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Fichiers de l'IDE : tout le dossier .vscode (le modèle ci-dessus garde settings.json, launch.json...)
+.vscode/

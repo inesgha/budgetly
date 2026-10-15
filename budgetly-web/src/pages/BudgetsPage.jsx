@@ -128,13 +128,13 @@ export default function BudgetsPage() {
         </div>
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
         <AsyncContent
           {...budgets}
           onRetry={budgets.reload}
           loadingLabel="Chargement des budgets"
           skeleton={
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {[0, 1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-52" rounded="rounded-card" />
               ))}
@@ -171,7 +171,7 @@ export default function BudgetsPage() {
             ) : (
               // @container : 1, 2 ou 3 colonnes selon la place réellement disponible (panneau d'alertes compris)
               <div className="@container">
-                <div className="grid gap-4 @xl:grid-cols-2 @5xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @5xl:grid-cols-3">
                   {data.map((budget) => (
                     <BudgetCard key={budget.id} budget={budget} onEdit={openEditor} onDelete={setToDelete} />
                   ))}

@@ -1,11 +1,11 @@
 import { SpinnerIcon } from '../icons'
 
 // Bouton principal, désactivé pendant l'envoi avec un texte d'attente ("Connexion…")
-export default function SubmitButton({ loading, loadingLabel, children }) {
+export default function SubmitButton({ loading, loadingLabel, disabled = false, children }) {
   return (
     <button
       type="submit"
-      disabled={loading}
+      disabled={loading || disabled}
       className="inline-flex w-full items-center justify-center gap-2 rounded-control bg-primary px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
     >
       {loading && <SpinnerIcon className="size-4" />}
