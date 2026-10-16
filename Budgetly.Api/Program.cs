@@ -17,13 +17,26 @@ const string SeedDemoArgument = "--seed-demo";
 var seedDemo = args.Contains(SeedDemoArgument);
 var builder = WebApplication.CreateBuilder(args.Where(arg => arg != SeedDemoArgument).ToArray());
 
+// Journaux dans la console uniquement : c'est ce que Vercel (et Render) affichent dans leurs logs
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
+
+// Dans un conteneur (Vercel, Render) : écoute sur toutes les interfaces (0.0.0.0) et sur le port fourni
+// par la variable PORT (8080 par défaut). En développement sans PORT, on garde launchSettings.json (port 5194).
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!builder.Environment.IsDevelopment() || port is not null)
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port ?? "8080"}");
+}
+
 // Secrets et réglages lus dans la configuration : user-secrets en développement,
-// variables d'environnement en production (ConnectionStrings__DefaultConnection, Jwt__Key, Cors__AllowedOrigins__0)
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// variables d'environnement en production (DATABASE_URL, Jwt__Key, Cors__AllowedOrigins__0)
+var connectionString = DatabaseConnection.Resolve(builder.Configuration);
 if (string.IsNullOrWhiteSpace(connectionString))
 {
     throw new InvalidOperationException(
-        "ConnectionStrings:DefaultConnection est manquante. En production, définissez la variable ConnectionStrings__DefaultConnection.");
+        "Aucune base de données configurée. En production : variable DATABASE_URL. "
+        + "En développement : dotnet user-secrets set \"ConnectionStrings:DefaultConnection\" \"Host=localhost;...\".");
 }
 
 var jwtKey = builder.Configuration["Jwt:Key"];
@@ -44,10 +57,10 @@ var allowedOrigins = (builder.Configuration.GetSection("Cors:AllowedOrigins").Ge
 // Add services to the container.
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString, sql =>
-        // Azure SQL serverless peut être en pause : la première connexion échoue le temps du réveil.
+    options.UseNpgsql(connectionString, npgsql =>
+        // Une base Neon gratuite se met en veille : la première connexion peut échouer le temps du réveil.
         // EF Core réessaie alors automatiquement (6 fois, en attendant de plus en plus longtemps).
-        sql.EnableRetryOnFailure(maxRetryCount: 6, maxRetryDelay: TimeSpan.FromSeconds(30), errorNumbersToAdd: null)));
+        npgsql.EnableRetryOnFailure(maxRetryCount: 6, maxRetryDelay: TimeSpan.FromSeconds(30), errorCodesToAdd: null)));
 
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AlertService>();
@@ -59,9 +72,9 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 // 5 tentatives par minute et par IP sur /api/auth/login et /api/auth/register
 builder.Services.AddAuthRateLimiting();
 
-// Derrière le proxy d'Azure App Service, la vraie IP du visiteur et le protocole (https) arrivent dans les
-// en-têtes X-Forwarded-For / X-Forwarded-Proto. ForwardLimit = 1 : on ne lit que la dernière valeur, ajoutée
-// par Azure, et non celles qu'un visiteur pourrait inventer.
+// Derrière le proxy de l'hébergeur (Vercel, Render), la vraie IP du visiteur et le protocole (https) arrivent dans
+// les en-têtes X-Forwarded-For / X-Forwarded-Proto. ForwardLimit = 1 : on ne lit que la dernière valeur, ajoutée
+// par l'hébergeur, et non celles qu'un visiteur pourrait inventer.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -111,7 +124,7 @@ var app = builder.Build();
 
 if (seedDemo)
 {
-    // Possible dans tous les environnements (pour remplir la base Azure depuis son PC),
+    // Possible dans tous les environnements (pour remplir la base Neon depuis son PC, avec DATABASE_URL ou --connection),
     // mais uniquement sur demande explicite : jamais au démarrage normal de l'API.
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();

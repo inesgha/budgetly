@@ -1,0 +1,24 @@
+# Base PostgreSQL de développement : "docker compose up -d" pour la démarrer, "docker compose down" pour l'arrêter.
+# Le mot de passe n'est pas écrit ici : il est lu dans le fichier .env (non versionné, voir .env.example).
+services:
+  postgres:
+    image: postgres:17
+    container_name: budgetly-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: budgetly
+      POSTGRES_USER: budgetly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Crée le fichier .env à partir de .env.example et définis POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Volume nommé : les données survivent à "docker compose down" (pas à "docker compose down -v")
+      - budgetly-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budgetly -d budgetly"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  budgetly-pgdata:

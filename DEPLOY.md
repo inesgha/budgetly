@@ -1,47 +1,44 @@
-# Mettre Budgetly en ligne
+# Mettre Budgetly en ligne (Vercel + Neon)
 
-Ce guide explique, pas à pas, comment publier Budgetly **gratuitement** :
+Ce guide explique, pas à pas, comment publier Budgetly **gratuitement**, entièrement depuis Vercel :
 
-| Partie | Service | Offre |
+| Partie | Où | Comment |
 | --- | --- | --- |
-| Base de données | Azure SQL Database | Offre gratuite (serverless, pause automatique) |
-| API (Budgetly.Api) | Azure App Service | Plan **Free F1** |
-| Site (budgetly-web) | Vercel | Plan **Hobby** (gratuit) |
+| Site (`budgetly-web`) | Vercel, projet n°1 | Site statique Vite |
+| API (`Budgetly.Api`) | Vercel, projet n°2 | Conteneur Docker (`Dockerfile.vercel`) |
+| Base de données | Neon, via le Marketplace Vercel | PostgreSQL serverless, offre gratuite |
 
 ```
-Navigateur ──► Vercel (React) ──► Azure App Service (API .NET 10) ──► Azure SQL Database
+Navigateur ──► Vercel : site React ──► Vercel : API .NET 10 (conteneur Docker) ──► Neon : PostgreSQL
 ```
 
-> Les écrans du portail Azure évoluent souvent : si un libellé est légèrement différent de ce guide, cherchez l'option la plus proche, le principe reste le même.
+> Les écrans de Vercel et de Neon évoluent : si un libellé diffère un peu de ce guide, cherchez l'option la plus proche, le principe reste le même.
+> Les conteneurs Docker sur Vercel sont encore une fonctionnalité **bêta**. Si Vercel refuse de déployer l'API sur le plan gratuit, suivez le **[plan B (Render)](#9-plan-b--lapi-sur-render)** : seule l'API change d'hébergeur.
 
 ---
 
 ## Sommaire
 
 0. [Avant de commencer](#0-avant-de-commencer)
-1. [Créer la base Azure SQL (offre gratuite)](#1-créer-la-base-azure-sql-offre-gratuite)
-2. [Récupérer la chaîne de connexion](#2-récupérer-la-chaîne-de-connexion)
-3. [Créer les tables et le compte démo depuis votre PC](#3-créer-les-tables-et-le-compte-démo-depuis-votre-pc)
-4. [Créer l'App Service (l'hébergement de l'API)](#4-créer-lapp-service-lhébergement-de-lapi)
-5. [Configurer les variables de l'API](#5-configurer-les-variables-de-lapi)
-6. [Déployer l'API depuis VS Code](#6-déployer-lapi-depuis-vs-code)
-7. [Déployer le site sur Vercel](#7-déployer-le-site-sur-vercel)
-8. [Autoriser l'URL Vercel dans l'API (CORS)](#8-autoriser-lurl-vercel-dans-lapi-cors)
-9. [Vérification finale](#9-vérification-finale)
-10. [Mettre à jour le site plus tard](#10-mettre-à-jour-le-site-plus-tard)
-11. [Problèmes fréquents](#11-problèmes-fréquents)
+1. [Se connecter à Vercel avec GitHub](#1-se-connecter-à-vercel-avec-github)
+2. [Créer le projet de l'API](#2-créer-le-projet-de-lapi)
+3. [Ajouter la base PostgreSQL (Neon)](#3-ajouter-la-base-postgresql-neon)
+4. [Créer les tables et le compte démo depuis votre PC](#4-créer-les-tables-et-le-compte-démo-depuis-votre-pc)
+5. [Configurer les variables de l'API et redéployer](#5-configurer-les-variables-de-lapi-et-redéployer)
+6. [Créer le projet du site](#6-créer-le-projet-du-site)
+7. [Autoriser l'adresse du site dans l'API (CORS)](#7-autoriser-ladresse-du-site-dans-lapi-cors)
+8. [Problèmes fréquents](#8-problèmes-fréquents)
+9. [Plan B : l'API sur Render](#9-plan-b--lapi-sur-render)
+10. [Mettre à jour plus tard](#10-mettre-à-jour-plus-tard)
 
-Tout au long du guide, notez vos valeurs dans un **gestionnaire de mots de passe** ou un fichier **hors du dépôt Git** (jamais dans le projet) :
+Au fil du guide, notez ces valeurs dans un **gestionnaire de mots de passe** (jamais dans un fichier du projet) :
 
-| À noter | Exemple | Où on l'obtient |
+| À noter | Exemple | Étape |
 | --- | --- | --- |
-| Nom du serveur SQL | `budgetly-sql-ines` | Étape 1 |
-| Identifiant administrateur SQL | `budgetlyadmin` | Étape 1 |
-| Mot de passe administrateur SQL | *(le vôtre)* | Étape 1 |
-| Chaîne de connexion | `Server=tcp:...` | Étape 2 |
-| Clé JWT de production | *(générée)* | Étape 5 |
-| URL de l'API | `https://budgetly-api-ines-....azurewebsites.net` | Étape 4 |
-| URL du site | `https://budgetly-ines.vercel.app` | Étape 7 |
+| Adresse de l'API | `https://budgetly-api.vercel.app` | 2 |
+| Adresse directe de la base (`DATABASE_URL_UNPOOLED`) | `postgresql://neondb_owner:...@ep-...neon.tech/neondb?sslmode=require` | 4 |
+| Clé JWT de production | *(générée, 88 caractères)* | 5 |
+| Adresse du site | `https://budgetly-ines.vercel.app` | 6 |
 
 ---
 
@@ -49,209 +46,141 @@ Tout au long du guide, notez vos valeurs dans un **gestionnaire de mots de passe
 
 ### Ce qu'il vous faut
 
-- **Un compte Azure.** Étudiante, vous pouvez utiliser l'offre **[Azure for Students](https://azure.microsoft.com/free/students/)** : 100 $ de crédit, sans carte bancaire, avec votre adresse e-mail étudiante. Ce guide n'utilise que des offres gratuites : le crédit n'est pas consommé.
-- **Un compte [GitHub](https://github.com)** avec le projet Budgetly poussé dessus (Vercel le récupère depuis GitHub).
-- **Un compte [Vercel](https://vercel.com)** : inscrivez-vous avec « Continue with GitHub ».
-- Sur votre PC :
-  - le **SDK .NET 10** (`dotnet --version` doit afficher `10.x`) ;
-  - l'outil EF Core : `dotnet tool install --global dotnet-ef` (ou `dotnet tool update --global dotnet-ef`) ;
-  - **VS Code** avec l'extension **Azure App Service** (éditeur : Microsoft). Elle installe aussi « Azure Resources », qui permet de se connecter à Azure.
+- Le projet **poussé sur GitHub**, avec ces fichiers (ils sont déjà dans le dépôt) :
+  - `Budgetly.Api/Dockerfile.vercel` et `Budgetly.Api/vercel.json` (pour l'API) ;
+  - `budgetly-web/vercel.json` (pour que le rechargement d'une page ne donne pas d'erreur 404).
+- Sur votre PC : le **SDK .NET 10** et l'outil EF Core (`dotnet tool install --global dotnet-ef`).
 
-### Le projet est déjà prêt pour la production
+### Ce que le projet fait déjà pour la production
 
-- Aucun secret n'est dans le code : la chaîne de connexion et la clé JWT sont lues dans la **configuration**. En ligne, ce sont des **variables d'environnement** que vous définirez dans Azure (étape 5).
-- Le nom d'une variable remplace le `:` de la configuration par `__` (deux tirets bas) : `ConnectionStrings:DefaultConnection` devient `ConnectionStrings__DefaultConnection`.
-- L'API refuse de démarrer avec un message clair s'il manque la chaîne de connexion ou si la clé JWT est trop courte (voir [Problèmes fréquents](#11-problèmes-fréquents)).
-- L'API réessaie automatiquement de se connecter si la base Azure est en pause (elle se réveille en quelques dizaines de secondes).
+- **Aucun secret dans le code.** L'API lit sa configuration dans des **variables d'environnement**, que vous définirez dans Vercel :
 
-### Choisir une région
+  | Variable | Rôle | Qui la crée |
+  | --- | --- | --- |
+  | `DATABASE_URL` | adresse de la base | Neon, automatiquement (étape 3) |
+  | `Jwt__Key` | clé de signature des connexions | vous (étape 5) |
+  | `Cors__AllowedOrigins__0` | adresse du site autorisé à appeler l'API | vous (étapes 5 et 7) |
+  | `PORT` | port d'écoute de l'API dans le conteneur | vous (étape 5) : `8080` |
 
-Prenez **la même région pour la base et pour l'API** (sinon chaque requête traverse l'Europe et coûte du temps). Une région proche de la Tunisie, par exemple **France Central**, est un bon choix. Si l'offre gratuite n'est pas proposée dans une région, essayez-en une autre (West Europe, Italy North…) et gardez-la pour tout le reste.
-
----
-
-## 1. Créer la base Azure SQL (offre gratuite)
-
-1. Ouvrez le [portail Azure](https://portal.azure.com) et connectez-vous.
-2. Dans la barre de recherche en haut, tapez **SQL databases** et ouvrez le service.
-3. Cliquez sur **+ Create** (Créer).
-4. Un bandeau propose l'offre gratuite (« Want to try Azure SQL Database for free? »). Cliquez sur **Apply offer** (Appliquer l'offre).
-   > Si le bandeau n'apparaît pas, c'est souvent que la subscription a déjà utilisé ses bases gratuites, ou que la région ne les propose pas encore : changez de région à l'étape suivante.
-
-### Onglet « Basics » (Bases)
-
-| Champ | Valeur |
-| --- | --- |
-| Subscription | votre abonnement (ex. *Azure for Students*) |
-| Resource group | **Create new** → `budgetly-rg` (ce « dossier » regroupera la base et l'API) |
-| Database name | `BudgetlyDb` |
-| Server | **Create new** (voir ci-dessous) |
-| Want to use SQL elastic pool? | **No** |
-| Workload environment | *Development* (si le choix est proposé) |
-| Compute + storage | déjà réglé par l'offre gratuite : **General Purpose – Serverless** |
-| Backup storage redundancy | **Locally-redundant** (le moins cher, suffisant ici) |
-
-**Création du serveur** (fenêtre « Create SQL Database Server ») :
-
-| Champ | Valeur |
-| --- | --- |
-| Server name | un nom unique au monde, en minuscules, ex. `budgetly-sql-ines` |
-| Location | votre région, ex. **France Central** |
-| Authentication method | **Use SQL authentication** |
-| Server admin login | ex. `budgetlyadmin` (pas `admin` ni `sa`, interdits) |
-| Password / Confirm password | un mot de passe fort (voir l'encadré) |
-
-> **Conseil mot de passe** : au moins 16 caractères avec majuscules, minuscules et chiffres, et seulement des symboles simples comme `!`, `-`, `_`. Évitez `;`, `'`, `"` et `$` : ils compliquent l'écriture de la chaîne de connexion et des commandes PowerShell.
-> Notez-le tout de suite dans votre gestionnaire de mots de passe : Azure ne vous le remontrera jamais.
-
-Cliquez sur **OK**.
-
-**Comportement à la fin du quota gratuit** : dans la section de l'offre gratuite (« Free database offer »), choisissez **Auto-pause the database until next month** (Mettre la base en pause jusqu'au mois suivant).
-
-> L'offre gratuite inclut chaque mois un quota de calcul et 32 Go de stockage. Avec cette option, si le quota est épuisé, la base se met en pause jusqu'au 1er du mois suivant au lieu de vous facturer. **Vous ne paierez jamais rien**, au pire la démo est indisponible quelques jours.
-
-### Onglet « Networking » (Réseau)
-
-| Champ | Valeur |
-| --- | --- |
-| Connectivity method | **Public endpoint** |
-| Allow Azure services and resources to access this server | **Yes** (l'API hébergée sur Azure doit pouvoir se connecter) |
-| Add current client IP address | **Yes** (votre PC doit pouvoir se connecter pour créer les tables) |
-| Connection policy | *Default* |
-| Minimum TLS version | **1.2** |
-
-### Onglet « Security » (Sécurité)
-
-- **Microsoft Defender for SQL** : **Not now** (option payante, inutile ici).
-
-### Onglets suivants
-
-- **Additional settings** → *Use existing data* : **None** (la base doit être vide, les tables seront créées par les migrations).
-- **Tags** : rien à faire.
-
-Cliquez sur **Review + create**, vérifiez que l'estimation de coût indique bien l'offre gratuite, puis **Create**. Le déploiement prend quelques minutes. À la fin, cliquez sur **Go to resource**.
-
-> Sur la page de la base (**Overview**), une section indique le **quota gratuit restant** pour le mois. Pratique pour surveiller.
+  Le double tiret bas `__` remplace le `:` de la configuration .NET (`Jwt:Key` devient `Jwt__Key`).
+- L'API **refuse de démarrer avec un message clair** s'il manque la base ou la clé JWT (visible dans les journaux Vercel).
+- L'API **réessaie automatiquement** de se connecter quand la base Neon se réveille.
+- L'adresse `postgres://…` fournie par Neon est **convertie automatiquement** (avec chiffrement SSL obligatoire).
 
 ---
 
-## 2. Récupérer la chaîne de connexion
+## 1. Se connecter à Vercel avec GitHub
 
-1. Sur la page de la base **BudgetlyDb**, menu de gauche : **Settings → Connection strings**.
-2. Onglet **ADO.NET (SQL authentication)**.
-3. Copiez la chaîne. Elle ressemble à ceci :
-
-   ```
-   Server=tcp:budgetly-sql-ines.database.windows.net,1433;Initial Catalog=BudgetlyDb;Persist Security Info=False;User ID=budgetlyadmin;Password={your_password};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
-   ```
-
-4. Modifiez-la (dans votre gestionnaire de mots de passe, **pas dans le projet**) :
-   - remplacez `{your_password}` **accolades comprises** par votre mot de passe : `Password=MonMotDePasse;` ;
-   - remplacez `Connection Timeout=30` par **`Connection Timeout=60`** : une base en pause met parfois plus de 30 secondes à se réveiller.
-
-C'est cette chaîne complète que les étapes suivantes appellent « **la chaîne de connexion** ». Elle contient votre mot de passe : ne la mettez **jamais** dans un fichier du projet, ni dans un message, ni dans une capture d'écran.
+1. Allez sur [vercel.com](https://vercel.com) et cliquez sur **Sign Up** (ou **Log In**).
+2. Choisissez le plan **Hobby** (gratuit, pour les projets personnels).
+3. Cliquez sur **Continue with GitHub** et autorisez Vercel à accéder à votre compte.
+4. Si Vercel le demande, donnez-lui accès au dépôt Budgetly (**Only select repositories** → choisissez le dépôt).
 
 ---
 
-## 3. Créer les tables et le compte démo depuis votre PC
+## 2. Créer le projet de l'API
 
-La base est vide. On crée les tables avec les **migrations EF Core**, puis on remplit le **compte démo**, le tout depuis votre PC.
+1. Sur le tableau de bord Vercel : **Add New… → Project**.
+2. Dans **Import Git Repository**, cliquez sur **Import** à côté du dépôt Budgetly.
+   > Le dépôt n'apparaît pas ? Cliquez sur **Adjust GitHub App Permissions** et autorisez-le.
+3. Écran **Configure Project** :
 
-1. Ouvrez un terminal **PowerShell** dans VS Code et allez dans le dossier de l'API :
+   | Champ | Valeur |
+   | --- | --- |
+   | Project Name | `budgetly-api` |
+   | Root Directory | **Edit** → choisissez **`Budgetly.Api`** → **Continue** |
+   | Framework Preset | **Other** (Vercel utilise `vercel.json` et `Dockerfile.vercel`) |
+   | Build and Output Settings | ne rien changer |
+   | Environment Variables | rien pour l'instant (étapes 3 et 5) |
+
+4. Cliquez sur **Deploy**. La première construction de l'image Docker prend plusieurs minutes.
+   > **C'est normal si l'API ne fonctionne pas encore** : il lui manque la base et la clé JWT. Le déploiement réussit, mais l'API refusera de démarrer tant que les étapes 3 à 5 ne sont pas faites.
+5. Sur la page du projet, notez l'**adresse de l'API** affichée dans **Domains**, par exemple `https://budgetly-api.vercel.app` (si le nom est déjà pris, Vercel ajoute un suffixe). Utilisez-la **sans `/` à la fin**.
+
+---
+
+## 3. Ajouter la base PostgreSQL (Neon)
+
+1. Ouvrez le projet **budgetly-api**, onglet **Storage**.
+2. Cliquez sur **Create Database** (ou **Browse Marketplace**), puis choisissez **Neon** (Serverless Postgres) → **Continue**.
+3. Acceptez les conditions, puis réglez :
+
+   | Champ | Valeur |
+   | --- | --- |
+   | Region | la plus proche de la Tunisie, ex. **Frankfurt (eu-central-1)** |
+   | Plan | **Free** |
+   | Database name | `budgetly` |
+
+4. Cliquez sur **Create** (ou **Continue**), puis attendez que la base soit prête.
+5. Reliez-la au projet de l'API : **Connect Project** (si Vercel ne l'a pas déjà fait), choisissez **budgetly-api**, cochez au moins **Production** (et **Preview** si vous le souhaitez), puis **Connect**.
+   > Laissez désactivées les options avancées de « Preview Branching » : elles créent une copie de la base pour chaque branche Git, inutile ici.
+
+Vercel ajoute alors automatiquement au projet plusieurs variables, dont les deux qui comptent pour nous :
+
+| Variable | Rôle |
+| --- | --- |
+| `DATABASE_URL` | adresse **avec pooler** (regroupement de connexions) : celle que l'**API** utilise |
+| `DATABASE_URL_UNPOOLED` | adresse **directe** : celle à utiliser **depuis votre PC** pour les migrations |
+
+Vous pouvez les voir dans **Settings → Environment Variables** du projet (cliquez sur l'œil pour révéler une valeur).
+
+> **Offre gratuite Neon** : la base « s'endort » après quelques minutes sans activité et se réveille au premier appel (en général en moins d'une seconde à quelques secondes). Le quota gratuit est largement suffisant pour une démo de portfolio.
+
+---
+
+## 4. Créer les tables et le compte démo depuis votre PC
+
+La base est vide. On crée les tables avec les **migrations EF Core**, puis on remplit le **compte démo**, depuis votre PC.
+
+1. Dans Vercel : projet **budgetly-api → Settings → Environment Variables**, révélez **`DATABASE_URL_UNPOOLED`** et copiez sa valeur.
+   > On utilise l'adresse **directe** : pendant une migration, EF Core pose un verrou sur la base, qui fonctionne mal à travers le pooler.
+2. Ouvrez un terminal **PowerShell** dans VS Code, dans le dossier de l'API :
 
    ```powershell
    cd Budgetly.Api
    ```
 
-2. Placez la chaîne de connexion dans une **variable de ce terminal uniquement**. Avec `Read-Host`, vous la collez au clavier et elle n'apparaît pas dans l'historique des commandes :
+3. Placez l'adresse dans une **variable de ce terminal uniquement**. Avec `Read-Host`, vous la collez et elle n'est pas enregistrée dans l'historique des commandes :
 
    ```powershell
-   $env:ConnectionStrings__DefaultConnection = Read-Host "Chaîne de connexion Azure"
+   $env:DATABASE_URL = Read-Host "Adresse directe Neon (DATABASE_URL_UNPOOLED)"
    ```
 
-   Collez la chaîne (clic droit dans le terminal), puis **Entrée**.
+   Collez l'adresse (clic droit dans le terminal), puis **Entrée**.
+   L'API donne la priorité à `DATABASE_URL` sur votre base locale : tant que cette variable existe, les commandes de ce terminal visent **Neon**.
 
-3. Créez les tables :
+4. Créez les tables :
 
    ```powershell
-   dotnet ef database update --connection $env:ConnectionStrings__DefaultConnection
+   dotnet ef database update
    ```
 
-   ✅ Résultat attendu : des lignes `Applying migration '..._InitialCreate'`, puis `Done.`
-   Le premier essai peut être long (réveil de la base). En cas d'erreur de pare-feu, voir [Problèmes fréquents](#migrations-refusées-par-le-pare-feu).
+   ✅ Résultat attendu : `Applying migration '..._InitialPostgres'`, puis `Done.`
+   (Une ligne `fail` concernant `__EFMigrationsHistory` peut apparaître juste avant : c'est normal la toute première fois, EF Core vérifie l'historique avant de créer sa table.)
 
-4. Créez le compte démo (6 mois de données réalistes) :
+5. Créez le compte démo (6 mois de données réalistes) :
 
    ```powershell
    dotnet run -- --seed-demo
    ```
 
-   La variable du terminal remplace la base locale : le compte est créé **dans Azure**.
-   ✅ Résultat attendu : `Compte démo prêt : demo@budgetly.tn (177 transactions, 30 budgets et 15 alertes sur 6 mois)`.
+   ✅ Résultat attendu : `Compte démo prêt : demo@budgetly.tn (177 transactions, 36 budgets et 27 alertes sur 6 mois)`.
+   > La commande peut être relancée sans risque : elle recrée uniquement le compte démo. Elle ne s'exécute **jamais** au démarrage normal de l'API.
+   > Variante sans variable d'environnement : `dotnet run -- --seed-demo --connection "<adresse>"` (mais l'adresse, et donc le mot de passe, reste alors dans l'historique du terminal).
 
-   > Cette commande peut être relancée sans risque : elle recrée uniquement le compte démo, sans toucher aux autres comptes. Elle ne s'exécute **jamais** au démarrage normal de l'API.
-
-5. **Important** : effacez la variable, pour que vos prochains `dotnet run` utilisent à nouveau la base locale :
+6. **Important** : effacez la variable pour que vos prochaines commandes utilisent à nouveau la base locale :
 
    ```powershell
-   Remove-Item Env:ConnectionStrings__DefaultConnection
+   Remove-Item Env:DATABASE_URL
    ```
 
    (Fermer le terminal a le même effet.)
 
 ---
 
-## 4. Créer l'App Service (l'hébergement de l'API)
+## 5. Configurer les variables de l'API et redéployer
 
-1. Dans le portail, recherchez **App Services**, puis **+ Create → Web App**.
-
-### Onglet « Basics »
-
-| Champ | Valeur |
-| --- | --- |
-| Subscription | la même que la base |
-| Resource group | `budgetly-rg` (le même que la base) |
-| Name | un nom unique, ex. `budgetly-api-ines` |
-| Secure unique default hostname | laissez la valeur proposée (activé) |
-| Publish | **Code** |
-| Runtime stack | **.NET 10 (LTS)** |
-| Operating System | **Windows** |
-| Region | **la même que la base**, ex. France Central |
-| Windows Plan | **Create new** → ex. `budgetly-plan` |
-| Pricing plan | cliquez sur **Explore pricing plans** et choisissez **Free F1** |
-
-### Autres onglets
-
-- **Database** : ne cochez rien (la base existe déjà).
-- **Deployment** : *Continuous deployment* **Disable** (on déploie depuis VS Code).
-- **Networking** : *Enable public access* **On**.
-- **Monitoring** : *Enable Application Insights* **No** (plus simple ; les journaux restent visibles dans « Log stream »).
-
-Cliquez sur **Review + create**, puis **Create**, puis **Go to resource**.
-
-### Noter l'URL de l'API
-
-Sur la page **Overview** de l'App Service, copiez **Default domain**. Avec l'option « unique default hostname », il ressemble à :
-
-```
-budgetly-api-ines-abcd1234efgh5678.francecentral-01.azurewebsites.net
-```
-
-L'URL de l'API est ce domaine précédé de `https://`, **sans `/` à la fin**.
-
-### Forcer le HTTPS
-
-Menu de gauche : **Settings → Configuration → General settings** → **HTTPS Only : On** (souvent déjà activé) → **Save**.
-
-> **À savoir sur le plan F1** : l'application s'endort après environ 20 minutes sans visite (l'option « Always On » n'existe pas en gratuit) et dispose de 60 minutes de calcul par jour, largement assez pour une démo de portfolio.
-
----
-
-## 5. Configurer les variables de l'API
-
-L'API lit sa configuration dans des **variables d'environnement**. Aucune ne doit apparaître dans le code ou dans Git.
-
-### Générer une nouvelle clé JWT de production
+### Générer la clé JWT de production
 
 Utilisez une clé **différente** de celle de votre PC. Dans PowerShell :
 
@@ -259,179 +188,203 @@ Utilisez une clé **différente** de celle de votre PC. Dans PowerShell :
 $bytes = New-Object byte[] 64; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); [Convert]::ToBase64String($bytes)
 ```
 
-Copiez le résultat (88 caractères) directement dans Azure (ci-dessous). Inutile de le sauvegarder ailleurs : si vous le perdez, il suffit d'en générer un nouveau (les utilisateurs devront juste se reconnecter).
+Copiez le résultat directement dans Vercel (ci-dessous). Si vous la perdez, générez-en simplement une nouvelle : les utilisateurs devront juste se reconnecter.
 
 ### Ajouter les variables
 
-1. Sur la page de l'App Service : **Settings → Environment variables**, onglet **App settings**.
-2. Pour chaque ligne du tableau : **+ Add**, remplissez **Name** et **Value**, cliquez sur **Apply**.
+1. Projet **budgetly-api → Settings → Environment Variables**.
+2. Pour chaque ligne : saisissez **Key** et **Value**, cochez l'environnement **Production** (et **Preview** si vous l'utilisez), puis **Save**.
 
-| Name | Value |
+| Key | Value |
 | --- | --- |
-| `ConnectionStrings__DefaultConnection` | la chaîne de connexion complète (étape 2) |
-| `Jwt__Key` | la clé générée ci-dessus |
-| `Cors__AllowedOrigins__0` | provisoirement `https://exemple.vercel.app` (vous mettrez la vraie URL à l'étape 8) |
+| `Jwt__Key` | la clé générée ci-dessus (cochez **Sensitive** si l'option est proposée) |
+| `Cors__AllowedOrigins__0` | provisoirement `https://exemple.vercel.app` (la vraie adresse à l'étape 7) |
+| `PORT` | `8080` |
 
-3. En bas de la page, cliquez sur **Apply**, puis **Confirm** : l'application redémarre avec ces valeurs.
+> **Pourquoi `PORT=8080` ?** L'image Docker tourne sans droits administrateur et ne peut pas écouter sur le port 80. Cette variable indique à Vercel d'envoyer les requêtes sur le port 8080, celui où l'API écoute.
+> `DATABASE_URL` est déjà là (étape 3) : ne la modifiez pas.
 
-> `Cors__AllowedOrigins__0` correspond à la première case du tableau `Cors:AllowedOrigins`. Pour autoriser un deuxième site plus tard (un nom de domaine personnalisé, par exemple), ajoutez `Cors__AllowedOrigins__1`.
-> Ne créez **pas** de variable `ASPNETCORE_ENVIRONMENT` : Azure démarre l'API en **Production**, c'est ce qu'on veut.
+### Redéployer
 
----
+Sur Vercel, une variable modifiée ne s'applique qu'au **prochain déploiement** :
 
-## 6. Déployer l'API depuis VS Code
-
-1. Dans VS Code, cliquez sur l'icône **Azure** de la barre latérale, puis **Sign in to Azure** et connectez-vous.
-2. Dans l'**Explorateur** de fichiers, faites un **clic droit sur le dossier `Budgetly.Api`** (pas sur la racine du projet, qui contient aussi les tests), puis **Deploy to Web App…**
-3. Choisissez votre abonnement, puis l'application **budgetly-api-ines**.
-4. Si VS Code indique qu'il manque une configuration de déploiement (« Required configuration to deploy is missing »), cliquez sur **Add Config** : il crée une tâche qui compile l'API en mode Release (`dotnet publish`) avant chaque envoi. Le dossier `.vscode/` créé n'est pas envoyé sur GitHub (il est dans le `.gitignore`).
-5. Confirmez l'écrasement du contenu existant (**Deploy**).
-6. Suivez la progression dans le panneau **Output**. À la fin : « Deployment to "budgetly-api-ines" completed ».
+1. Onglet **Deployments**.
+2. Sur le dernier déploiement, menu **⋯** → **Redeploy** → **Redeploy**.
 
 ### Tester l'API
 
-Ouvrez dans le navigateur :
+Ouvrez `https://<adresse-de-l-api>/health` dans le navigateur.
 
-```
-https://<default-domain-de-votre-api>/health
-```
+✅ La page affiche **OK**.
 
-✅ La page doit afficher **OK** (la première fois, attendez jusqu'à une minute : l'application démarre).
-
-Si vous voyez une erreur **500.30** ou une page d'erreur, ouvrez **Monitoring → Log stream** dans le portail : le message de l'API explique ce qui manque (voir [Problèmes fréquents](#erreur-50030-au-démarrage-de-lapi)).
+Sinon, regardez les journaux : onglet **Logs** du projet (ou **Deployments → le déploiement → Runtime Logs**). L'API y écrit clairement ce qui manque (voir [Problèmes fréquents](#8-problèmes-fréquents)). Au démarrage, vous devez voir : `Now listening on: http://0.0.0.0:8080`.
 
 ---
 
-## 7. Déployer le site sur Vercel
+## 6. Créer le projet du site
 
-> Prérequis : le projet est poussé sur GitHub (avec `budgetly-web/vercel.json`, qui permet de recharger n'importe quelle page sans erreur 404).
-
-1. Sur [vercel.com](https://vercel.com), cliquez sur **Add New… → Project**.
-2. Dans **Import Git Repository**, choisissez votre dépôt Budgetly → **Import**.
-   > Le dépôt n'apparaît pas ? Cliquez sur **Adjust GitHub App Permissions** et autorisez Vercel à lire ce dépôt.
-3. Écran **Configure Project** :
+1. Tableau de bord Vercel : **Add New… → Project**, et importez **le même dépôt** Budgetly.
+2. Écran **Configure Project** :
 
    | Champ | Valeur |
    | --- | --- |
-   | Project Name | ex. `budgetly-ines` (il donnera l'adresse `budgetly-ines.vercel.app` si elle est libre) |
-   | Root Directory | **Edit** → choisissez **`budgetly-web`** |
-   | Framework Preset | **Vite** (détecté automatiquement une fois le dossier choisi) |
-   | Build Command / Output Directory | laissez les valeurs par défaut (`npm run build`, `dist`) |
+   | Project Name | ex. `budgetly-ines` (donnera `budgetly-ines.vercel.app` si l'adresse est libre) |
+   | Root Directory | **Edit** → **`budgetly-web`** |
+   | Framework Preset | **Vite** (détecté automatiquement) |
+   | Build and Output Settings | valeurs par défaut (`npm run build`, dossier `dist`) |
 
-4. Déroulez **Environment Variables** et ajoutez :
+3. Déroulez **Environment Variables** et ajoutez :
 
    | Key | Value |
    | --- | --- |
-   | `VITE_API_URL` | l'URL de l'API, ex. `https://budgetly-api-ines-abcd1234efgh5678.francecentral-01.azurewebsites.net` (en **https**, **sans `/` final**) |
+   | `VITE_API_URL` | l'adresse de l'API de l'étape 2, ex. `https://budgetly-api.vercel.app` (**https**, **sans `/` final**) |
 
-5. Cliquez sur **Deploy**. Après une à deux minutes : « Congratulations! ».
-6. Notez l'**URL de production** affichée dans **Domains** sur la page du projet (ex. `https://budgetly-ines.vercel.app`).
+4. Cliquez sur **Deploy**.
+5. Notez l'**adresse du site** affichée dans **Domains** (ex. `https://budgetly-ines.vercel.app`).
 
-> **Attention** : Vercel crée aussi une URL différente pour chaque déploiement (ex. `budgetly-ines-git-main-ines.vercel.app`). Utilisez toujours le domaine de **production** (celui de « Domains »), c'est le seul autorisé par l'API.
-> Les variables `VITE_...` sont **intégrées au moment de la compilation** : si vous modifiez `VITE_API_URL`, il faut **redéployer** (onglet **Deployments** → menu `…` du dernier déploiement → **Redeploy**).
-
----
-
-## 8. Autoriser l'URL Vercel dans l'API (CORS)
-
-Par sécurité, l'API n'accepte que les appels venant des sites listés dans `Cors__AllowedOrigins`. Il faut y mettre la vraie adresse Vercel.
-
-1. Portail Azure → votre App Service → **Settings → Environment variables**.
-2. Cliquez sur `Cors__AllowedOrigins__0` et remplacez la valeur provisoire par l'URL de production Vercel, ex. :
-
-   ```
-   https://budgetly-ines.vercel.app
-   ```
-
-   (en **https**, **sans `/` à la fin**, sans chemin après le domaine)
-3. **Apply**, puis **Apply** en bas de page et **Confirm** : l'API redémarre.
+> Les variables `VITE_…` sont **intégrées au moment de la compilation** : si vous changez `VITE_API_URL`, il faut **redéployer** le site.
+> Vercel crée aussi une adresse différente pour chaque déploiement (avec `-git-` ou un code au milieu). Utilisez toujours l'adresse de **production** affichée dans « Domains ».
 
 ---
 
-## 9. Vérification finale
+## 7. Autoriser l'adresse du site dans l'API (CORS)
 
-1. Ouvrez l'URL Vercel.
-2. Cliquez sur **Essayer avec le compte démo**.
-   - Si le serveur dormait, le message « Le serveur se réveille, cela peut prendre jusqu'à une minute… » s'affiche : c'est normal.
-3. Vous arrivez sur le tableau de bord de **Yasmine** avec ses graphiques, ses budgets et 3 alertes non lues.
+Par sécurité, l'API n'accepte que les appels venant des sites listés dans `Cors__AllowedOrigins`.
+
+1. Projet **budgetly-api → Settings → Environment Variables**.
+2. Modifiez `Cors__AllowedOrigins__0` : remplacez la valeur provisoire par l'**adresse du site**, ex. `https://budgetly-ines.vercel.app` (**https**, sans `/` à la fin, sans chemin).
+3. **Save**, puis **redéployez l'API** (Deployments → **⋯** → **Redeploy**).
+
+### Vérification finale
+
+1. Ouvrez l'adresse du site.
+2. Cliquez sur **Essayer avec le compte démo**. Si la base dormait, le message « Le serveur se réveille, cela peut prendre jusqu'à une minute… » peut s'afficher quelques secondes.
+3. Vous arrivez sur le tableau de bord de **Yasmine** : graphiques, budgets, alertes.
 4. Rechargez la page (F5) sur `/transactions` : elle doit s'afficher (pas d'erreur 404).
-5. Dans le README, remplacez `[LIEN_DEMO]` par l'URL Vercel.
+5. Dans le README, remplacez `[LIEN_DEMO]` par l'adresse du site.
 
 🎉 Budgetly est en ligne.
 
-### Après la mise en ligne (sécurité)
-
-- Si vous ne comptez plus lancer de migrations depuis votre PC, supprimez la règle de pare-feu de votre adresse IP : base SQL → serveur → **Security → Networking** → règle de votre IP → supprimer → **Save**.
-- Ne partagez jamais la chaîne de connexion ni la clé JWT. Si l'une d'elles a fuité : changez le mot de passe SQL (serveur SQL → **Reset password**) ou générez une nouvelle clé, puis mettez à jour les variables de l'étape 5.
-
 ---
 
-## 10. Mettre à jour le site plus tard
-
-| Je modifie… | Ce que je fais |
-| --- | --- |
-| Le front (`budgetly-web`) | `git push` sur GitHub : Vercel redéploie automatiquement. |
-| L'API (`Budgetly.Api`) | VS Code → clic droit sur `Budgetly.Api` → **Deploy to Web App…** (comme à l'étape 6). |
-| Le modèle de données (nouvelle migration) | Refaire l'étape 3 (points 1, 2, 3 et 5) **avant** de déployer la nouvelle API. |
-| Les données du compte démo | Refaire l'étape 3 (points 1, 2, 4 et 5). Pensez-y une fois par mois : les données suivent la date du jour. |
-
----
-
-## 11. Problèmes fréquents
+## 8. Problèmes fréquents
 
 ### Erreur CORS dans le navigateur
 
 **Symptôme** : rien ne se passe à la connexion, et la console du navigateur (F12 → Console) affiche :
-`Access to XMLHttpRequest at 'https://...azurewebsites.net/api/auth/login' from origin 'https://...vercel.app' has been blocked by CORS policy`.
+`Access to XMLHttpRequest at 'https://budgetly-api...' from origin 'https://budgetly-ines...' has been blocked by CORS policy`.
 
-**Causes et solutions** :
-- `Cors__AllowedOrigins__0` ne correspond pas **exactement** à l'adresse affichée dans la barre du navigateur : vérifiez `https://`, l'orthographe, et qu'il n'y a pas de chemin après le domaine.
-- Vous utilisez une URL de **déploiement** Vercel (avec `-git-` ou un code au milieu) au lieu du domaine de **production** : ouvrez le domaine de production, ou ajoutez cette adresse dans `Cors__AllowedOrigins__1`.
-- Les variables ont été modifiées sans cliquer sur **Apply / Confirm** : l'API n'a pas redémarré.
+**Solutions** :
+- `Cors__AllowedOrigins__0` doit être **exactement** l'adresse affichée dans la barre du navigateur : `https://`, même orthographe, aucun chemin après le domaine.
+- Vous êtes sur une adresse de **déploiement** (avec `-git-` ou un code au milieu) : ouvrez l'adresse de **production**, ou ajoutez cette adresse dans une deuxième variable `Cors__AllowedOrigins__1`.
+- La variable a été modifiée mais l'API **n'a pas été redéployée** : sur Vercel, c'est obligatoire.
 - **Piège** : si l'API plante, sa réponse d'erreur n'a pas d'en-têtes CORS, et le navigateur affiche aussi une « erreur CORS ». Vérifiez d'abord que `https://<api>/health` répond **OK**.
 
-### Erreur 500.30 au démarrage de l'API
+### Erreur 502 sur toutes les requêtes de l'API (le port)
 
-**Symptôme** : `/health` affiche « HTTP Error 500.30 – ASP.NET Core app failed to start ».
+**Symptôme** : `/health` renvoie **502 Bad Gateway**, ou la page d'erreur de Vercel.
 
-**Où regarder** : portail → App Service → **Monitoring → Log stream** (ou **Diagnose and solve problems**). Les messages de l'API sont explicites :
+**Cause** : Vercel envoie les requêtes sur un port où l'API n'écoute pas.
+
+**Solutions** :
+- Vérifiez la variable **`PORT = 8080`** (étape 5), puis **redéployez**.
+- Dans les journaux (**Logs**), la ligne `Now listening on: http://0.0.0.0:8080` doit apparaître. Si l'API écoute sur un autre port, c'est que `PORT` a une autre valeur.
+- Si les journaux montrent une erreur au démarrage (voir ci-dessous), l'API s'est arrêtée : corrigez l'erreur, c'est elle qui provoque le 502.
+
+### L'API ne démarre pas, ou erreur de connexion à la base
+
+Regardez les journaux du projet **budgetly-api** (**Logs**) :
 
 | Message dans les journaux | Solution |
 | --- | --- |
-| `ConnectionStrings:DefaultConnection est manquante` | Ajouter la variable `ConnectionStrings__DefaultConnection` (étape 5), avec **deux** tirets bas. |
-| `Jwt:Key est manquante ou trop courte` | Ajouter `Jwt__Key` avec une clé générée (88 caractères). |
-| Erreur parlant de runtime ou de framework introuvable | **Settings → Configuration → Stack settings** : vérifier **.NET** et la version **.NET 10**. |
+| `Aucune base de données configurée` | `DATABASE_URL` absente : reliez Neon au projet pour l'environnement **Production** (étape 3), puis redéployez. |
+| `Jwt:Key est manquante ou trop courte` | Ajoutez `Jwt__Key` (88 caractères générés), avec **deux** tirets bas, puis redéployez. |
+| `password authentication failed` | La variable `DATABASE_URL` a été modifiée à la main : reconnectez la base depuis l'onglet **Storage** pour la régénérer. |
+| `relation "Users" does not exist` | Les tables n'existent pas : refaites l'étape 4 (migrations). |
+| Délai dépassé (`timeout`) au premier appel | La base se réveillait : l'API réessaie seule ; rechargez la page après quelques secondes. |
 
-Après chaque correction : **Apply / Confirm**, attendez une minute, puis rouvrez `/health`.
+### Migrations refusées
 
-### La base est en pause (premier chargement très lent)
-
-**Symptôme** : la première connexion de la journée met jusqu'à une minute ; le site affiche « Le serveur se réveille… ».
-
-**C'est normal** : l'API gratuite s'endort après ~20 minutes sans visite, et la base serverless se met en pause après une période d'inactivité. L'API réessaie automatiquement pendant le réveil de la base. Les visites suivantes sont rapides.
-
-**Si la base reste inaccessible des heures** (erreur répétée, journaux indiquant que la base « is not currently available ») : le **quota gratuit du mois** est peut-être épuisé. Vérifiez sur la page **Overview** de la base : avec l'option « Auto-pause the database until next month », elle redeviendra disponible le 1er du mois suivant, sans frais.
-
-### Migrations refusées par le pare-feu
-
-**Symptôme** à l'étape 3 :
-`Cannot open server 'budgetly-sql-ines' requested by the login. Client with IP address 'x.x.x.x' is not allowed to access the server.`
-
-**Cause** : l'adresse IP de votre PC n'est pas autorisée (elle change souvent, par exemple quand la box redémarre).
-
-**Solution** :
-1. Portail → **SQL servers** → votre serveur → **Security → Networking**.
-2. **Add your client IPv4 address** (l'adresse indiquée dans le message d'erreur doit apparaître).
-3. **Save**, attendez une à deux minutes, relancez la commande.
+| Symptôme (étape 4) | Cause | Solution |
+| --- | --- | --- |
+| La migration s'applique à votre base **locale** au lieu de Neon | La variable `$env:DATABASE_URL` n'est pas définie **dans ce terminal** | Refaites le point 3 de l'étape 4 dans le même terminal que `dotnet ef`. |
+| `password authentication failed` | Adresse mal copiée (souvent la fin coupée) | Recopiez toute la valeur de `DATABASE_URL_UNPOOLED`. |
+| Blocage ou erreur de verrou pendant la migration | Vous avez utilisé l'adresse **avec pooler** (`-pooler` dans le nom) | Utilisez `DATABASE_URL_UNPOOLED`. |
+| `No such host is known` / délai dépassé | Pas d'accès Internet, ou réseau qui bloque le port 5432 (certains Wi-Fi d'école ou d'entreprise) | Réessayez depuis une autre connexion (partage de connexion du téléphone, par exemple). |
+| `dotnet ef` : commande introuvable | Outil non installé | `dotnet tool install --global dotnet-ef`, puis rouvrez le terminal. |
 
 ### Autres messages
 
 | Symptôme | Cause probable | Solution |
 | --- | --- | --- |
-| `Login failed for user 'budgetlyadmin'` | Mot de passe incorrect dans la chaîne, ou `{your_password}` pas remplacé | Corriger la chaîne (étape 2) et la variable Azure (étape 5). |
-| Page **404** en rechargeant `/budgets` sur Vercel | `vercel.json` absent, ou **Root Directory** différent de `budgetly-web` | Vérifier le dossier dans **Settings → Build and Deployment** puis redéployer. |
-| Console : `VITE_API_URL est absente`, ou appels vers `localhost` | Variable non définie au moment de la compilation | Ajouter `VITE_API_URL` dans Vercel (**Settings → Environment Variables**) puis **Redeploy**. |
-| Console : `Mixed Content` | `VITE_API_URL` commence par `http://` | Mettre l'adresse en **https://** puis redéployer. |
-| Message « Trop de tentatives. Patiente une minute… » | Protection contre les essais de mots de passe en série (5 par minute) | Attendre une minute. |
-| « This web app is stopped » / quota dépassé | Les 60 minutes de calcul quotidiennes du plan F1 sont épuisées | Attendre le lendemain (le quota se réinitialise chaque jour). |
-| `dotnet ef` : commande introuvable | Outil EF Core non installé | `dotnet tool install --global dotnet-ef`, puis rouvrir le terminal. |
+| Page **404** en rechargeant `/budgets` sur le site | Root Directory du site différent de `budgetly-web` | **Settings → Build and Deployment** du projet du site, puis redéployez. |
+| Console : `VITE_API_URL est absente`, ou appels vers `localhost` | Variable absente au moment de la compilation | Ajoutez `VITE_API_URL` au projet du site, puis redéployez. |
+| Console : `Mixed Content` | `VITE_API_URL` commence par `http://` | Mettez l'adresse en **https://**, puis redéployez le site. |
+| « Trop de tentatives. Patiente une minute… » | Protection contre les essais de mots de passe en série (5 par minute et par adresse IP) | Attendez une minute. |
+| Le déploiement de l'API échoue (« container » non disponible, ou erreur sur `services`) | Fonctionnalité bêta non ouverte à votre compte | Passez au **plan B** ci-dessous. |
+
+---
+
+## 9. Plan B : l'API sur Render
+
+Si Vercel refuse le runtime « container » sur le plan gratuit, hébergez **uniquement l'API** sur [Render](https://render.com), avec **le même Dockerfile**. La base reste sur Neon, le site reste sur Vercel.
+
+### Créer le service
+
+1. Sur [render.com](https://render.com), **Get Started** → connectez-vous avec **GitHub**.
+2. **New → Web Service**, puis choisissez le dépôt Budgetly (autorisez Render à y accéder si besoin).
+3. Réglez le service :
+
+   | Champ | Valeur |
+   | --- | --- |
+   | Name | `budgetly-api` (donnera `https://budgetly-api.onrender.com` si le nom est libre) |
+   | Language | **Docker** |
+   | Branch | `main` (ou votre branche principale) |
+   | Region | **Frankfurt (EU Central)** (proche de la base Neon) |
+   | Root Directory | `Budgetly.Api` |
+   | Dockerfile Path | `./Dockerfile.vercel` *(relatif au Root Directory)* |
+   | Docker Build Context Directory | `.` *(relatif au Root Directory)* |
+   | Instance Type | **Free** |
+
+4. **Environment Variables** : ajoutez
+
+   | Key | Value |
+   | --- | --- |
+   | `DATABASE_URL` | l'adresse **avec pooler** de Neon (variable `DATABASE_URL` du projet Vercel, ou console Neon) |
+   | `Jwt__Key` | une clé générée (même commande qu'à l'étape 5) |
+   | `Cors__AllowedOrigins__0` | l'adresse du site Vercel, ex. `https://budgetly-ines.vercel.app` |
+
+   > Pas besoin de `PORT` : Render la définit lui-même et l'API la lit automatiquement.
+
+5. Dans **Advanced**, mettez **Health Check Path** à `/health`.
+6. Cliquez sur **Deploy Web Service**. Suivez la construction dans **Logs** : à la fin, `Now listening on: http://0.0.0.0:…` puis « Your service is live ».
+7. Testez `https://budgetly-api.onrender.com/health` : la page affiche **OK**.
+
+### Brancher le site sur Render
+
+1. Projet du site sur Vercel → **Settings → Environment Variables** → `VITE_API_URL` = l'adresse Render (https, sans `/` final).
+2. **Redéployez le site**.
+3. Si vous aviez créé le projet API sur Vercel, vous pouvez le supprimer (**Settings → Advanced → Delete Project**) ; la base Neon reste utilisable par Render tant que vous ne la supprimez pas (vérifiez-le dans l'onglet **Storage** avant).
+
+### À savoir sur l'offre gratuite de Render
+
+- Le service **s'endort après 15 minutes** sans visite ; le réveil prend **environ une minute**. C'est exactement le cas prévu par le message « Le serveur se réveille, cela peut prendre jusqu'à une minute… » de la page de connexion.
+- 750 heures gratuites par mois et par espace de travail (largement assez pour un seul service).
+- Les migrations et le compte démo se font toujours depuis votre PC, exactement comme à l'étape 4.
+
+---
+
+## 10. Mettre à jour plus tard
+
+| Je modifie… | Ce que je fais |
+| --- | --- |
+| Le site (`budgetly-web`) ou l'API (`Budgetly.Api`) | `git push` : Vercel (ou Render) reconstruit et redéploie automatiquement. |
+| Le modèle de données (nouvelle migration) | Refaire l'étape 4 (points 1 à 4 puis 6) **avant** de pousser la nouvelle version de l'API. |
+| Les données du compte démo | Refaire l'étape 4 (points 1 à 3, 5 et 6). Pensez-y une fois par mois : les données suivent la date du jour. |
+| Une variable (clé, CORS…) | La modifier dans les réglages du projet, puis **redéployer**. |
+
+### Bonnes pratiques de sécurité
+
+- Ne partagez jamais `DATABASE_URL`, `DATABASE_URL_UNPOOLED` ni `Jwt__Key` (pas de capture d'écran, pas de message).
+- En cas de fuite : réinitialisez le mot de passe de la base dans la console Neon (le projet Vercel reçoit la nouvelle adresse via l'intégration ; vérifiez `DATABASE_URL`), ou générez une nouvelle `Jwt__Key`, puis redéployez.
+- Le fichier `.env` (mot de passe de la base locale) n'est jamais envoyé sur GitHub : il est dans le `.gitignore`.

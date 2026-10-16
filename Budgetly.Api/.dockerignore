@@ -1,0 +1,11 @@
+# Fichiers exclus de l'image Docker (compilations locales, réglages de l'éditeur, secrets éventuels)
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.http
+.env
+.env.*
+Dockerfile*
+.dockerignore

@@ -153,10 +153,13 @@ public class CategoriesController : ControllerBase
     private ConflictObjectResult DuplicateName(string name) =>
         Conflict(new { message = $"Vous avez déjà une catégorie \"{name}\" de ce type." });
 
-    // La comparaison des noms ne tient pas compte des majuscules (collation par défaut de SQL Server)
-    private Task<bool> NameExistsAsync(int userId, string name, TransactionType type, int? excludedId) =>
-        _db.Categories.AnyAsync(c =>
-            c.UserId == userId && c.Name == name && c.Type == type && c.Id != excludedId);
+    // PostgreSQL distingue les majuscules : on compare en minuscules pour que "café" et "Café" soient un doublon
+    private Task<bool> NameExistsAsync(int userId, string name, TransactionType type, int? excludedId)
+    {
+        var lowerName = name.ToLower();
+        return _db.Categories.AnyAsync(c =>
+            c.UserId == userId && c.Name.ToLower() == lowerName && c.Type == type && c.Id != excludedId);
+    }
 
     private async Task<bool> IsUsedAsync(int categoryId) =>
         await _db.Transactions.AnyAsync(t => t.CategoryId == categoryId)

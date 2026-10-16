@@ -16,7 +16,10 @@ public static class DemoSeeder
     private const string Name = "Yasmine Trabelsi";
     private const int MonthsOfHistory = 6;
 
-    // Limites mensuelles des budgets (le loyer, dépense fixe, n'a pas de budget)
+    // Loyer mensuel : dépense fixe, avec un budget exactement égal (statut "Atteint", jamais "Dépassé")
+    private const decimal Rent = 200m;
+
+    // Limites mensuelles des budgets des dépenses variables (générées ci-dessous en part de chaque budget)
     private static readonly Dictionary<string, decimal> BudgetLimits = new()
     {
         ["Alimentation"] = 230m,
@@ -76,7 +79,7 @@ public static class DemoSeeder
     public static async Task<string> SeedAsync(AppDbContext db, AlertService alertService, DateOnly today)
     {
         // Avec EnableRetryOnFailure, une transaction ouverte à la main doit passer par la "stratégie d'exécution" :
-        // si la connexion tombe (base Azure qui se réveille), EF rejoue TOUT le bloc depuis le début.
+        // si la connexion tombe (base Neon qui se réveille), EF rejoue TOUT le bloc depuis le début.
         var strategy = db.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
@@ -148,7 +151,7 @@ public static class DemoSeeder
             }
 
             // Dépenses : le loyer, puis chaque catégorie jusqu'à la part prévue de son budget
-            Add("Loyer", 200m, 1, "Loyer du studio");
+            Add("Loyer", Rent, 1, "Loyer du studio");
             foreach (var (categoryName, limit) in BudgetLimits)
             {
                 var target = RoundToHalf(limit * SpendingRatios[categoryName][index]);
@@ -160,14 +163,16 @@ public static class DemoSeeder
             }
 
             db.Transactions.AddRange(transactions);
-            var budgets = BudgetLimits.Select(b => new Budget
-            {
-                UserId = user.Id,
-                CategoryId = categories[b.Key].Id,
-                Limit = b.Value,
-                Month = period.Month,
-                Year = period.Year
-            }).ToList();
+            var budgets = BudgetLimits
+                .Append(new KeyValuePair<string, decimal>("Loyer", Rent))
+                .Select(b => new Budget
+                {
+                    UserId = user.Id,
+                    CategoryId = categories[b.Key].Id,
+                    Limit = b.Value,
+                    Month = period.Month,
+                    Year = period.Year
+                }).ToList();
             db.Budgets.AddRange(budgets);
             await db.SaveChangesAsync();
 

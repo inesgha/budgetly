@@ -1,0 +1,29 @@
+# Image Docker de l'API Budgetly (Vercel en runtime "container", ou Render en plan B).
+# Construite depuis le dossier Budgetly.Api : "docker build -f Dockerfile.vercel -t budgetly-api ."
+
+# ---- Étape 1 : compilation avec le SDK .NET 10 ----
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Le fichier projet d'abord : tant qu'il ne change pas, Docker réutilise la restauration des paquets (cache)
+COPY Budgetly.Api.csproj ./
+RUN dotnet restore
+
+COPY . ./
+RUN dotnet publish -c Release -o /app/publish --no-restore /p:UseAppHost=false
+
+# ---- Étape 2 : exécution avec le seul runtime ASP.NET (image légère, sans le SDK) ----
+# "chiseled" : image minimale, sans shell, qui tourne sans droits administrateur.
+# "-extra" : ajoute ICU (les cultures) ; nécessaire car l'API formate les montants en français ("214,000 DT").
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS final
+WORKDIR /app
+COPY --from=build /app/publish ./
+
+# Port 8080 : sans droits administrateur, l'image ne peut pas écouter sur le port 80 (Program.cs lit PORT).
+# ASPNETCORE_HTTP_PORTS vidé : c'est PORT qui décide (évite l'avertissement "Overriding HTTP_PORTS").
+# DOTNET_EnableDiagnostics=0 : désactive le serveur de diagnostic (inutile ici), pas les journaux.
+ENV PORT=8080 \
+    ASPNETCORE_HTTP_PORTS= \
+    DOTNET_EnableDiagnostics=0
+
+ENTRYPOINT ["dotnet", "Budgetly.Api.dll"]

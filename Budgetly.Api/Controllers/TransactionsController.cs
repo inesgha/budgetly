@@ -64,8 +64,12 @@ public class TransactionsController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(filters.Search))
         {
-            var search = filters.Search.Trim();
-            query = query.Where(t => (t.Note != null && t.Note.Contains(search)) || t.Category.Name.Contains(search));
+            // ILIKE : recherche sans tenir compte des majuscules ("espresso" trouve "Espresso").
+            // Les caractères spéciaux de LIKE (% _ \) tapés par l'utilisateur sont échappés pour rester du texte.
+            var escaped = filters.Search.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+            var pattern = $"%{escaped}%";
+            query = query.Where(t =>
+                (t.Note != null && EF.Functions.ILike(t.Note, pattern)) || EF.Functions.ILike(t.Category.Name, pattern));
         }
 
         var totalCount = await query.CountAsync();

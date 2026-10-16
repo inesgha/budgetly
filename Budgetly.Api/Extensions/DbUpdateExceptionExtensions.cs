@@ -1,11 +1,11 @@
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Budgetly.Api.Extensions;
 
 public static class DbUpdateExceptionExtensions
 {
-    // Codes SQL Server : 2601 = doublon dans un index unique, 2627 = doublon dans une contrainte unique
+    // PostgreSQL : code SQLSTATE 23505 = "unique_violation" (doublon dans un index ou une contrainte unique)
     public static bool IsUniqueConstraintViolation(this DbUpdateException exception) =>
-        exception.InnerException is SqlException { Number: 2601 or 2627 };
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }

@@ -4,7 +4,8 @@
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![ASP.NET Core](https://img.shields.io/badge/ASP.NET_Core-10-512BD4?logo=dotnet&logoColor=white)
-![SQL Server](https://img.shields.io/badge/SQL_Server-Express-CC2927?logo=microsoftsqlserver&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-conteneur-2496ED?logo=docker&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-xUnit-5B3FE0)
 
@@ -22,7 +23,7 @@ Budgetly est une application web complète (API REST + interface React) pensée 
 
 Ou plus simplement : bouton **« Essayer avec le compte démo »** sur la page de connexion.
 
-> **Premier chargement lent ?** C'est normal : l'API (Azure App Service, offre gratuite) s'endort quand personne ne l'utilise, et la base Azure SQL serverless se met en pause. Le premier appel les réveille, ce qui peut prendre jusqu'à une minute ; ensuite, tout est rapide.
+> **Premier chargement lent ?** C'est normal : l'API (un conteneur Docker sur Vercel) s'arrête quand personne ne l'utilise, et la base PostgreSQL gratuite (Neon) se met en veille après quelques minutes d'inactivité. Le premier appel les réveille : quelques secondes en général, jusqu'à une minute au pire ; ensuite, tout est rapide.
 
 ---
 
@@ -60,10 +61,10 @@ Ou plus simplement : bouton **« Essayer avec le compte démo »** sur la page d
 | --- | --- |
 | Front-end | React 19, Vite, React Router 7, Tailwind CSS 4, Recharts, Axios |
 | Back-end | ASP.NET Core 10 (Web API, contrôleurs), Entity Framework Core 10 |
-| Base de données | SQL Server (Express) |
+| Base de données | PostgreSQL 17 (Npgsql) : Neon en ligne, Docker en local |
 | Sécurité | JWT (Bearer), BCrypt, limitation de débit, CORS |
 | Tests | xUnit, EF Core InMemory |
-| Hébergement | Azure App Service (API), Azure SQL Database serverless (base), Vercel (front) |
+| Hébergement | Vercel : le front, et l'API dans un conteneur Docker ; Neon : PostgreSQL serverless |
 
 ### Architecture
 
@@ -73,7 +74,7 @@ flowchart LR
     B --> S["Services<br/>AlertService · TokenService"]
     B --> C["EF Core 10"]
     S --> C
-    C --> D[("SQL Server")]
+    C --> D[("PostgreSQL<br/>Neon")]
 ```
 
 ### Modèle de données
@@ -105,7 +106,7 @@ erDiagram
     }
     TRANSACTION {
         int Id PK
-        decimal Amount "decimal(10,3)"
+        decimal Amount "numeric(10,3)"
         string Type
         date Date "DateOnly"
         string Note
@@ -114,7 +115,7 @@ erDiagram
     }
     BUDGET {
         int Id PK
-        decimal Limit "decimal(10,3)"
+        decimal Limit "numeric(10,3)"
         int Month
         int Year
         int UserId FK
@@ -163,9 +164,11 @@ Les erreurs suivent le format standard **ProblemDetails** (RFC 9110) ; les messa
 - **Authentification JWT + BCrypt** : le mot de passe n'est jamais stocké, seulement son empreinte BCrypt (salée et volontairement lente). À la connexion, l'API signe un JWT (HMAC-SHA256) que le front envoie à chaque requête ; la clé de signature est gardée hors du code (`dotnet user-secrets`).
 - **Isolation des données par utilisateur** : chaque requête filtre sur l'identifiant lu dans le token. Une ressource d'un autre utilisateur renvoie **404** (et non 403) pour ne pas révéler qu'elle existe.
 - **Alertes automatiques dans un service** : `AlertService` est appelé après chaque création, modification ou suppression de dépense ou de budget. La règle métier est écrite une seule fois, testée, et un **index unique (BudgetId, Level)** garantit qu'une alerte n'est jamais créée en double, même en cas de requêtes simultanées.
-- **Agrégations côté SQL** : les totaux (`SUM`, `GROUP BY`) sont calculés par SQL Server via EF Core ; aucune liste de transactions n'est chargée en mémoire pour faire une somme.
+- **Agrégations côté SQL** : les totaux (`SUM`, `GROUP BY`) sont calculés par PostgreSQL via EF Core ; aucune liste de transactions n'est chargée en mémoire pour faire une somme.
 - **`DateOnly` pour les dates** : une transaction a une date sans heure ni fuseau (colonne SQL `date`). Fini les dépenses du 1er du mois qui basculent au mois précédent à cause d'un décalage UTC. Côté front, les dates sont construites en heure locale (jamais `toISOString()`).
-- **Montants en `decimal(10,3)`** : le dinar tunisien compte 3 décimales (millimes) ; aucun nombre à virgule flottante pour l'argent.
+- **Montants en `numeric(10,3)`** : le dinar tunisien compte 3 décimales (millimes) ; aucun nombre à virgule flottante pour l'argent.
+- **PostgreSQL bien utilisé** : recherche insensible aux majuscules avec `ILIKE` (caractères spéciaux échappés), doublons détectés par le code d'erreur standard `23505`, réessais automatiques quand la base serverless se réveille.
+- **API conteneurisée** : image Docker en deux étapes (SDK pour compiler, runtime ASP.NET « chiseled » pour exécuter, sans droits administrateur), configuration uniquement par variables d'environnement (`DATABASE_URL`, `Jwt__Key`…), journaux sur la console.
 - **Limitation de débit** : 5 tentatives par minute et par adresse IP sur la connexion et l'inscription (réponse 429 en français) contre les attaques par force brute.
 - **Gestion globale des erreurs** : toute exception non gérée devient une réponse ProblemDetails propre, sans pile d'appels ; le détail part dans les logs.
 - **Tests unitaires** (xUnit) : statut d'un budget aux limites exactes (80 % et 100 %, au millime près) et `AlertService` (création des alertes 80 et 100, pas de doublon, isolation par utilisateur et par mois).
@@ -178,21 +181,32 @@ Les erreurs suivent le format standard **ProblemDetails** (RFC 9110) ; les messa
 ### Prérequis
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
-- SQL Server ou SQL Server Express (instance `localhost\SQLEXPRESS` par défaut)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (pour la base PostgreSQL locale)
 - [Node.js](https://nodejs.org/) 22 ou plus récent
 - L'outil EF Core : `dotnet tool install --global dotnet-ef`
 
-### 1. Back-end (API)
+### 1. Base de données (PostgreSQL dans Docker)
+
+```bash
+# À la racine du dépôt
+cp .env.example .env      # puis choisis un mot de passe dans POSTGRES_PASSWORD
+docker compose up -d      # démarre PostgreSQL 17 sur localhost:5432
+```
+
+Les données sont gardées dans un volume Docker : `docker compose down` arrête la base sans rien effacer.
+
+### 2. Back-end (API)
 
 ```bash
 cd Budgetly.Api
 
-# Clé de signature des JWT (au moins 64 caractères aléatoires), stockée hors du dépôt
+# Secrets stockés hors du dépôt (user-secrets) : la base locale et la clé de signature des JWT
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=budgetly;Username=budgetly;Password=<mot de passe du .env>"
 dotnet user-secrets set "Jwt:Key" "<colle ici une longue clé aléatoire>"
 #   Pour générer une clé :  openssl rand -base64 64
 #   ou, en PowerShell 7 :   [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(64))
 
-# Créer la base BudgetlyDb et ses tables
+# Créer les tables
 dotnet ef database update
 
 # (Facultatif) Créer le compte démo avec 6 mois de données
@@ -202,10 +216,9 @@ dotnet run -- --seed-demo
 dotnet run
 ```
 
-> Autre serveur SQL ? Remplace la chaîne de connexion sans toucher au code :
-> `dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=...;Database=BudgetlyDb;..."`
+> L'API cherche sa base dans cet ordre : l'option `--connection`, puis la variable `DATABASE_URL` (format `postgres://user:pass@host/db`, comme chez Neon), puis `ConnectionStrings:DefaultConnection`.
 
-### 2. Front-end
+### 3. Front-end
 
 ```bash
 cd budgetly-web
@@ -214,7 +227,7 @@ npm install
 npm run dev               # http://localhost:5173
 ```
 
-### 3. Tests
+### 4. Tests
 
 ```bash
 # À la racine du dépôt
@@ -230,9 +243,16 @@ dotnet test
 Sur la page de connexion, le bouton **« Essayer avec le compte démo »** remplit et envoie ces identifiants.
 Le compte est créé par `dotnet run -- --seed-demo` : jamais au démarrage normal de l'API, uniquement sur cette commande explicite (ce qui permet aussi de remplir la base de production depuis son PC). Relancer la commande recrée le compte démo sans toucher aux autres comptes.
 
-### 4. Mise en ligne
+### 5. Mise en ligne
 
-Le guide pas à pas (Azure SQL Database, Azure App Service, Vercel) est dans **[DEPLOY.md](DEPLOY.md)**.
+Le guide pas à pas (Vercel pour le front et l'API en conteneur, Neon pour PostgreSQL, et Render en plan B) est dans **[DEPLOY.md](DEPLOY.md)**.
+
+Pour tester l'image Docker de l'API sur son PC :
+
+```bash
+cd Budgetly.Api
+docker build -f Dockerfile.vercel -t budgetly-api .
+```
 
 ---
 
@@ -241,14 +261,17 @@ Le guide pas à pas (Azure SQL Database, Azure App Service, Vercel) est dans **[
 ```
 Budgetly/
 ├── Budgetly.sln
+├── docker-compose.yml         PostgreSQL 17 pour le développement local
 ├── Budgetly.Api/              API ASP.NET Core
 │   ├── Controllers/           Auth, Categories, Transactions, Budgets, Alerts, Stats
 │   ├── Data/                  AppDbContext, catégories par défaut, compte démo
 │   ├── Dtos/                  Objets échangés avec le front (jamais les entités EF)
-│   ├── Infrastructure/        Gestion globale des erreurs, limitation de débit
-│   ├── Migrations/            Migrations EF Core
+│   ├── Infrastructure/        Connexion à la base, gestion des erreurs, limitation de débit
+│   ├── Migrations/            Migrations EF Core (PostgreSQL)
 │   ├── Models/                Entités : User, Category, Transaction, Budget, Alert
-│   └── Services/              AlertService, BudgetCalculator, TokenService
+│   ├── Services/              AlertService, BudgetCalculator, TokenService
+│   ├── Dockerfile.vercel      Image Docker de l'API (Vercel ou Render)
+│   └── vercel.json            Projet Vercel de l'API (runtime "container")
 ├── Budgetly.Tests/            Tests unitaires xUnit
 ├── budgetly-web/              Front-end React
 │   └── src/
@@ -277,7 +300,8 @@ Budgetly/
 
 **Budgetly** is a full-stack personal budgeting app for students: track income and expenses in Tunisian dinars, set a monthly budget per category, and get automatic alerts at 80 % and 100 % of each budget.
 
-- **Stack**: React 19 + Vite + Tailwind CSS 4 + Recharts (front-end), ASP.NET Core 10 Web API + Entity Framework Core 10 (back-end), SQL Server, xUnit.
+- **Stack**: React 19 + Vite + Tailwind CSS 4 + Recharts (front-end), ASP.NET Core 10 Web API + Entity Framework Core 10 (back-end), PostgreSQL (Npgsql; Neon in production, Docker locally), xUnit.
 - **Highlights**: JWT authentication with BCrypt password hashing, per-user data isolation (404 on foreign resources), alert logic in a dedicated, unit-tested service with a unique index against duplicates, SQL-side aggregations, `DateOnly` dates to avoid UTC shifts, rate limiting on authentication endpoints, global ProblemDetails error handling, responsive and accessible French UI.
-- **Live demo**: [LIEN_DEMO](LIEN_DEMO) — the first load can take up to a minute while the free Azure API and serverless database wake up.
-- **Run it**: set `Jwt:Key` with `dotnet user-secrets`, run `dotnet ef database update` and `dotnet run` in `Budgetly.Api`, then `npm install` and `npm run dev` in `budgetly-web`. Demo account: `demo@budgetly.tn` / `Demo1234!` (created with `dotnet run -- --seed-demo`).
+- **Live demo**: [LIEN_DEMO](LIEN_DEMO) — the first load can be slow while the API container and the free serverless database wake up.
+- **Deployment**: front-end and API (Docker container) on Vercel, PostgreSQL on Neon; see [DEPLOY.md](DEPLOY.md) (in French).
+- **Run it**: `docker compose up -d` for PostgreSQL, set the connection string and `Jwt:Key` with `dotnet user-secrets`, run `dotnet ef database update` and `dotnet run` in `Budgetly.Api`, then `npm install` and `npm run dev` in `budgetly-web`. Demo account: `demo@budgetly.tn` / `Demo1234!` (created with `dotnet run -- --seed-demo`).
